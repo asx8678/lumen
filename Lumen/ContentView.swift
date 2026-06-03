@@ -47,6 +47,13 @@ struct ContentView: View {
         }
         .frame(minWidth: 720, minHeight: 460)
         .task(id: env.vault.current?.root) { await env.tabs.restore() }
+        .task(id: env.vault.current?.root) {
+            // Watch the vault and reconcile external edits against open tabs.
+            guard let changes = env.startWatching() else { return }
+            for await batch in changes {
+                await env.tabs.reconcileExternalChanges(batch)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .lumenCloseActiveTab)) { _ in
             if let id = env.tabs.active?.id { requestClose(id) }
         }
@@ -54,6 +61,30 @@ struct ContentView: View {
             // Flush pending autosave when the app loses focus / backgrounds.
             if phase != .active { Task { await env.tabs.flush() } }
         }
+        .alert(
+            "File Changed on Disk",
+            isPresented: conflictPresented,
+            presenting: env.tabs.active
+        ) { document in
+            Button("Keep My Version") { document.dismissConflict() }
+            Button("Reload from Disk", role: .destructive) {
+                Task { await document.reloadFromDisk() }
+            }
+        } message: { document in
+            Text(
+                "\(document.url?.lastPathComponent ?? "This file") was modified by another app "
+                    + "while you have unsaved changes. Keep your version (then ⌘S to overwrite) "
+                    + "or reload the on-disk version and lose your edits.")
+        }
+    }
+
+    /// Whether the active tab has an unresolved external-edit conflict (P1.6).
+    private var conflictPresented: Binding<Bool> {
+        Binding(
+            get: { env.tabs.active?.hasExternalConflict ?? false },
+            set: { newValue in
+                if !newValue { env.tabs.active?.dismissConflict() }
+            })
     }
 
     /// Closes a tab, flushing/saving any unsaved changes first (autosave means

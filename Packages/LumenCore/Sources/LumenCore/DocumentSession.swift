@@ -37,6 +37,10 @@ public final class DocumentSession: Identifiable {
     /// Whether `text` differs from what's on disk.
     public private(set) var isDirty: Bool
 
+    /// Set when the file changed externally while we hold unsaved edits (P1.6).
+    /// The UI surfaces a warning; full conflict resolution is Phase 3.
+    public internal(set) var hasExternalConflict: Bool = false
+
     /// The last-known on-disk contents (the baseline for dirtiness).
     @ObservationIgnored private var savedText: String
     /// Guards `text.didSet` while we apply a load programmatically.
@@ -62,6 +66,7 @@ public final class DocumentSession: Identifiable {
         savedText = contents
         self.url = url
         isDirty = false
+        hasExternalConflict = false
     }
 
     /// Saves the current text back to disk (atomic via `FileService`).
@@ -72,6 +77,9 @@ public final class DocumentSession: Identifiable {
         try await files.write(toWrite, to: url)
         savedText = toWrite
         isDirty = (text != savedText)
+        // Saving establishes a new baseline and resolves any conflict in our
+        // favor (the on-disk file now matches our text).
+        hasExternalConflict = false
     }
 
     /// Saves only if there are unsaved changes (used by autosave so clean
@@ -82,6 +90,56 @@ public final class DocumentSession: Identifiable {
         guard url != nil, isDirty else { return false }
         try await save()
         return true
+    }
+
+    /// The hash of the saved baseline — what we believe is on disk. Used by
+    /// reconciliation to detect (and ignore) our own writes (P1.6).
+    public var baselineHash: String { NoteIndexing.contentHash(of: savedText) }
+
+    /// Reconciles an external on-disk change with this document (P1.6).
+    ///
+    /// Reads the file, compares its hash to our saved baseline, and either
+    /// ignores (our own write / no real change), reloads (disk changed, no
+    /// unsaved edits), or flags a conflict (disk changed under unsaved edits).
+    public func reconcileExternalChange() async {
+        guard let url else { return }
+        // A read failure (e.g. the file was deleted/moved) is left to Phase 3.
+        guard let onDisk = try? await files.read(url) else { return }
+        let decision = FileReconciliation.decide(
+            onDiskHash: NoteIndexing.contentHash(of: onDisk),
+            baselineHash: baselineHash,
+            isDirty: isDirty)
+        switch decision {
+        case .ignore:
+            break
+        case .reload:
+            applyLoadedText(onDisk)
+        case .warnConflict:
+            hasExternalConflict = true
+        }
+    }
+
+    /// Dismisses the external-conflict warning, keeping the in-memory edits
+    /// (the user can then ⌘S to overwrite the on-disk version).
+    public func dismissConflict() {
+        hasExternalConflict = false
+    }
+
+    /// Force-reloads the document from disk, discarding any unsaved edits
+    /// (used to resolve a conflict in favor of the on-disk version).
+    public func reloadFromDisk() async {
+        guard let url, let onDisk = try? await files.read(url) else { return }
+        applyLoadedText(onDisk)
+    }
+
+    /// Replaces the working text with loaded content and resets dirty/conflict.
+    private func applyLoadedText(_ contents: String) {
+        isApplyingLoad = true
+        text = contents
+        isApplyingLoad = false
+        savedText = contents
+        isDirty = false
+        hasExternalConflict = false
     }
 
     /// Clears the session (no file open).

@@ -8,6 +8,7 @@
 //  from this single object instead of re-plumbing.
 //
 
+import Foundation
 import LumenCore
 import LumenDesignSystem
 import Observation
@@ -36,6 +37,11 @@ public final class AppEnvironment {
     /// menu and the sidebar share one selection.
     let fileTree: FileTreeModel
 
+    /// The FSEvents watcher for the open vault (P1.6), or `nil` when no vault.
+    /// Recreated when the vault changes; its stream is consumed by
+    /// reconciliation here and by the indexing actor (P1.9).
+    private(set) var watcher: VaultWatcher?
+
     /// Creates the composition root with fresh services. `VaultManager` reopens
     /// the last vault on launch (P1.4).
     public init() {
@@ -59,5 +65,25 @@ public final class AppEnvironment {
         self.theme = theme ?? ThemeManager()
         self.tabs = TabManager(vault: vault, files: files)
         self.fileTree = FileTreeModel(vault: vault, files: files)
+    }
+
+    /// (Re)starts the FSEvents watcher for the current vault, stopping any prior
+    /// one. Returns the new watcher's change stream, or `nil` when no vault is
+    /// open. Driven from the root view's `.task(id: vaultRoot)`.
+    func startWatching() -> AsyncStream<Set<URL>>? {
+        watcher?.stop()
+        watcher = nil
+        guard let root = vault.current?.root else { return nil }
+        let newWatcher = VaultWatcher(root: root)
+        self.watcher = newWatcher
+        let stream = newWatcher.events()
+        newWatcher.start()
+        return stream
+    }
+
+    /// Stops the watcher (vault close / teardown).
+    func stopWatching() {
+        watcher?.stop()
+        watcher = nil
     }
 }

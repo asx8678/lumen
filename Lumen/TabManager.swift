@@ -63,6 +63,19 @@ final class TabManager {
         await autosave.flush()
     }
 
+    /// Reconciles a batch of externally-changed URLs against open tabs (P1.6):
+    /// clean tabs reload, dirty tabs raise a conflict warning, our own writes
+    /// are ignored (handled inside `DocumentSession.reconcileExternalChange`).
+    func reconcileExternalChanges(_ urls: Set<URL>) async {
+        let standardized = Set(urls.map { $0.standardizedFileURL })
+        for tab in tabs {
+            guard let tabURL = tab.url?.standardizedFileURL, standardized.contains(tabURL) else {
+                continue
+            }
+            await tab.reconcileExternalChange()
+        }
+    }
+
     private func saveActiveIfNeeded() async {
         do { try await active?.autosaveIfNeeded() } catch {
             logger.error("Autosave failed: \(String(describing: error), privacy: .public)")
