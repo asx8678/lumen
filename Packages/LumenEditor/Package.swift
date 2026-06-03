@@ -8,12 +8,17 @@ let package = Package(
         .library(name: "LumenEditor", targets: ["LumenEditor"])
     ],
     dependencies: [
+        // Design tokens / theming engine (highlighter colors come from tokens).
+        .package(path: "../LumenDesignSystem"),
         // Shared synthetic-data generators / benchmark helpers (test-only use).
-        .package(path: "../LumenBenchmark")
+        .package(path: "../LumenBenchmark"),
     ],
     targets: [
         .target(
             name: "LumenEditor",
+            dependencies: [
+                .product(name: "LumenDesignSystem", package: "LumenDesignSystem")
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]

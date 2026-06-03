@@ -13,6 +13,13 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
-        )
+        ),
+        .testTarget(
+            name: "LumenDesignSystemTests",
+            dependencies: ["LumenDesignSystem"],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ]
+        ),
     ]
 )

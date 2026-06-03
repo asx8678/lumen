@@ -11,6 +11,7 @@
 //
 
 import LumenCore
+import LumenDesignSystem
 import SwiftUI
 
 @main
@@ -27,8 +28,11 @@ struct LumenApp: App {
         Window(VaultPresentation.windowTitle(for: env.vault.current), id: "main") {
             ContentView()
                 .environment(env)
+                .environment(env.theme)
                 .frame(minWidth: 720, minHeight: 460)
                 .navigationTitle(VaultPresentation.windowTitle(for: env.vault.current))
+                .tint(env.theme.theme.accentColor)
+                .preferredColorScheme(env.theme.preferredColorScheme)
         }
         .defaultSize(width: 1_100, height: 720)
         .windowResizability(.contentMinSize)
@@ -46,6 +50,9 @@ struct LumenApp: App {
         // ⌘, Settings scene — stub only; full UI is P1.19.
         Settings {
             SettingsView()
+                .environment(env.theme)
+                .tint(env.theme.theme.accentColor)
+                .preferredColorScheme(env.theme.preferredColorScheme)
         }
     }
 }

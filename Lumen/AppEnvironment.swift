@@ -9,6 +9,7 @@
 //
 
 import LumenCore
+import LumenDesignSystem
 import Observation
 
 /// Holds the app's shared services for dependency injection.
@@ -25,16 +26,25 @@ public final class AppEnvironment {
     /// Off-main filesystem operations for the open vault (P1.5).
     public let files: FileService
 
+    /// Appearance + accent theming engine (P1.17).
+    public let theme: ThemeManager
+
     /// Creates the composition root with fresh services. `VaultManager` reopens
     /// the last vault on launch (P1.4).
     public init() {
         self.vault = VaultManager()
         self.files = FileService()
+        self.theme = ThemeManager()
     }
 
     /// Creates the composition root with injected services (for previews/tests).
-    public init(vault: VaultManager, files: FileService = FileService()) {
+    public init(
+        vault: VaultManager,
+        files: FileService = FileService(),
+        theme: ThemeManager? = nil
+    ) {
         self.vault = vault
         self.files = files
+        self.theme = theme ?? ThemeManager()
     }
 }
