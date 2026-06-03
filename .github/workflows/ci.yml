@@ -1,0 +1,57 @@
+# Lumen CI — build + test + lint on every push / PR.
+#
+# NOTE: This repository currently has NO git remote, so this workflow is inert
+# until the repo is pushed to GitHub. Until then, use the equivalent local
+# checks via `./Scripts/check.sh`, which run the same steps.
+#
+# One macOS job is intentional (no matrix) for Phase 1.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-lint:
+    name: Build, Test & Lint (macOS)
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.app/Contents/Developer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          # Fall back gracefully if the exact app name differs on the runner.
+          if [ -d /Applications/Xcode_26.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+          fi
+          xcodebuild -version
+          swift --version
+
+      - name: Lint (swift-format)
+        run: xcrun swift-format lint --strict --recursive Packages Lumen
+
+      - name: Build & test packages
+        run: |
+          for pkg in LumenCore LumenEditor LumenDesignSystem LumenBenchmark; do
+            echo "::group::$pkg"
+            if [ -d "Packages/$pkg/Tests" ]; then
+              ( cd "Packages/$pkg" && swift build && swift test )
+            else
+              ( cd "Packages/$pkg" && swift build )
+            fi
+            echo "::endgroup::"
+          done
+
+      - name: Build macOS app
+        run: xcodebuild -scheme Lumen -destination 'platform=macOS' build
+
+      - name: Benchmark smoke run
+        run: ( cd Packages/LumenBenchmark && swift run -c release lumen-bench )

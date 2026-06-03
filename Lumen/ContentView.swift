@@ -6,10 +6,10 @@
 //  status bar. P1.1 placeholder only — no real functionality yet.
 //
 
-import SwiftUI
 import LumenCore
 import LumenDesignSystem
 import LumenEditor
+import SwiftUI
 
 /// The top-level three-region application shell.
 ///

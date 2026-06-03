@@ -104,7 +104,8 @@ public final class VaultManager {
                 relativeTo: nil
             )
         } catch {
-            logger.error("Bookmark creation failed: \(error.localizedDescription, privacy: .public)")
+            logger.error(
+                "Bookmark creation failed: \(error.localizedDescription, privacy: .public)")
             throw VaultError.bookmarkCreationFailed
         }
         try activate(url: url, bookmark: bookmark)
@@ -152,12 +153,14 @@ public final class VaultManager {
     /// - Returns: The resolved URL, or `nil` if it can't be resolved.
     private func resolve(_ recent: RecentVault) -> URL? {
         var isStale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: recent.bookmark,
-            options: .withSecurityScope,
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        ) else {
+        guard
+            let url = try? URL(
+                resolvingBookmarkData: recent.bookmark,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        else {
             return nil
         }
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -170,8 +173,9 @@ public final class VaultManager {
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             ) {
-                let refreshed = RecentVault(name: recent.name, path: recent.path,
-                                            bookmark: fresh, lastOpened: recent.lastOpened)
+                let refreshed = RecentVault(
+                    name: recent.name, path: recent.path,
+                    bookmark: fresh, lastOpened: recent.lastOpened)
                 recents = RecentVaultsPolicy.updating(
                     RecentVaultsPolicy.removing(recents, path: recent.path),
                     adding: refreshed
@@ -188,7 +192,8 @@ public final class VaultManager {
         do {
             try openRecent(mostRecent)
         } catch {
-            logger.notice("Could not reopen last vault: \(String(describing: error), privacy: .public)")
+            logger.notice(
+                "Could not reopen last vault: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -209,7 +214,8 @@ public final class VaultManager {
 
     private static func loadRecents(from defaults: UserDefaults) -> [RecentVault] {
         guard let data = defaults.data(forKey: recentsKey),
-              let decoded = try? JSONDecoder().decode([RecentVault].self, from: data) else {
+            let decoded = try? JSONDecoder().decode([RecentVault].self, from: data)
+        else {
             return []
         }
         return decoded

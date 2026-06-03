@@ -7,6 +7,10 @@ let package = Package(
     products: [
         .library(name: "LumenEditor", targets: ["LumenEditor"])
     ],
+    dependencies: [
+        // Shared synthetic-data generators / benchmark helpers (test-only use).
+        .package(path: "../LumenBenchmark")
+    ],
     targets: [
         .target(
             name: "LumenEditor",
@@ -16,10 +20,13 @@ let package = Package(
         ),
         .testTarget(
             name: "LumenEditorTests",
-            dependencies: ["LumenEditor"],
+            dependencies: [
+                "LumenEditor",
+                .product(name: "LumenBenchmark", package: "LumenBenchmark"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
-        )
+        ),
     ]
 )

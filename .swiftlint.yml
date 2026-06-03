@@ -1,0 +1,32 @@
+# SwiftLint config (OPTIONAL).
+#
+# swift-format (bundled with the toolchain) is Lumen's primary linter/formatter;
+# see .swift-format. SwiftLint is only run by Scripts/check.sh / CI when it is
+# installed, and is skipped gracefully otherwise. Keep this rule set sensible
+# (not maximally strict) so it stays green.
+
+included:
+  - Packages
+  - Lumen
+
+excluded:
+  - "**/.build"
+  - "**/Package.swift"
+
+# A few noisy default rules are relaxed; the rest of the defaults apply.
+disabled_rules:
+  - todo                  # tracked in bd, not enforced by the linter
+  - trailing_comma        # swift-format owns comma style
+  - line_length           # swift-format owns line length (100)
+
+line_length:
+  warning: 100
+  error: 160
+
+identifier_name:
+  min_length: 1           # allow short locals like i, f, m, ns
+  excluded:
+    - id
+
+type_name:
+  min_length: 3

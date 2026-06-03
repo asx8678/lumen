@@ -23,16 +23,17 @@ final class VaultTests: XCTestCase {
     // MARK: - RecentVaultsPolicy
 
     private func recent(_ path: String) -> RecentVault {
-        RecentVault(name: (path as NSString).lastPathComponent,
-                    path: path,
-                    bookmark: Data(path.utf8))
+        RecentVault(
+            name: (path as NSString).lastPathComponent,
+            path: path,
+            bookmark: Data(path.utf8))
     }
 
     func testAddingPrependsAndDedupes() {
         var list: [RecentVault] = []
         list = RecentVaultsPolicy.updating(list, adding: recent("/a"))
         list = RecentVaultsPolicy.updating(list, adding: recent("/b"))
-        list = RecentVaultsPolicy.updating(list, adding: recent("/a")) // re-open /a
+        list = RecentVaultsPolicy.updating(list, adding: recent("/a"))  // re-open /a
         XCTAssertEqual(list.map(\.path), ["/a", "/b"])
     }
 
@@ -42,8 +43,8 @@ final class VaultTests: XCTestCase {
             list = RecentVaultsPolicy.updating(list, adding: recent("/v\(i)"))
         }
         XCTAssertEqual(list.count, RecentVaultsPolicy.cap)
-        XCTAssertEqual(list.first?.path, "/v14") // most recent at front
-        XCTAssertEqual(list.last?.path, "/v5")   // oldest retained
+        XCTAssertEqual(list.first?.path, "/v14")  // most recent at front
+        XCTAssertEqual(list.last?.path, "/v5")  // oldest retained
     }
 
     func testRemoving() {
@@ -71,14 +72,16 @@ final class VaultTests: XCTestCase {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let bookmark = try tmp.bookmarkData(options: [],
-                                            includingResourceValuesForKeys: nil,
-                                            relativeTo: nil)
+        let bookmark = try tmp.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil)
         var isStale = false
-        let resolved = try URL(resolvingBookmarkData: bookmark,
-                               options: [],
-                               relativeTo: nil,
-                               bookmarkDataIsStale: &isStale)
+        let resolved = try URL(
+            resolvingBookmarkData: bookmark,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale)
         XCTAssertEqual(resolved.standardizedFileURL.path, tmp.standardizedFileURL.path)
     }
 
@@ -112,8 +115,9 @@ final class VaultTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         // Bookmark pointing at a path that does not exist → reopen must not crash.
-        let bogus = RecentVault(name: "Gone", path: "/nonexistent/Gone",
-                                bookmark: Data("bogus".utf8))
+        let bogus = RecentVault(
+            name: "Gone", path: "/nonexistent/Gone",
+            bookmark: Data("bogus".utf8))
         if let data = try? JSONEncoder().encode([bogus]) {
             defaults.set(data, forKey: "LumenCore.recentVaults")
         }

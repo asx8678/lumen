@@ -11,6 +11,7 @@
 //
 
 import AppKit
+import LumenBenchmark
 import XCTest
 
 @testable import LumenEditor
@@ -28,17 +29,19 @@ final class TextKit2PerformanceTests: XCTestCase {
     /// Asserts the editor host is on the TextKit 2 stack, not TextKit 1.
     func testTextKit2IsActive() {
         let textView = makeTextKit2View()
-        XCTAssertNotNil(textView.textLayoutManager,
-                        "Expected a TextKit 2 NSTextLayoutManager")
-        XCTAssertNotNil(textView.textContentStorage,
-                        "Expected a TextKit 2 NSTextContentStorage")
+        XCTAssertNotNil(
+            textView.textLayoutManager,
+            "Expected a TextKit 2 NSTextLayoutManager")
+        XCTAssertNotNil(
+            textView.textContentStorage,
+            "Expected a TextKit 2 NSTextContentStorage")
         // The presence of textLayoutManager confirms the modern stack; we never
         // instantiate the legacy `layoutManager` ourselves.
     }
 
     /// Measures time to load a large document and lay out the initial viewport.
     func testLargeDocumentLoadAndViewportLayout() {
-        let markdown = SampleContent.syntheticMarkdown(lineCount: largeLineCount)
+        let markdown = SyntheticData.markdownDocument(lineCount: largeLineCount)
         let byteCount = markdown.utf8.count
         print("Synthetic doc: \(largeLineCount) lines, \(byteCount / 1024) KiB")
 
@@ -50,7 +53,8 @@ final class TextKit2PerformanceTests: XCTestCase {
             // Force initial viewport layout (what the user first sees), not the
             // whole document — this is the TextKit 2 viewport path.
             guard let layoutManager = textView.textLayoutManager,
-                  let viewportStart = layoutManager.documentRange.location as NSTextLocation? else {
+                let viewportStart = layoutManager.documentRange.location as NSTextLocation?
+            else {
                 XCTFail("Missing TextKit 2 layout manager")
                 return
             }
@@ -69,7 +73,7 @@ final class TextKit2PerformanceTests: XCTestCase {
 
     /// Measures a batch of programmatic insertions into a large document.
     func testBatchEditPerformance() {
-        let markdown = SampleContent.syntheticMarkdown(lineCount: largeLineCount)
+        let markdown = SyntheticData.markdownDocument(lineCount: largeLineCount)
         let textView = makeTextKit2View()
         textView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         textView.string = markdown

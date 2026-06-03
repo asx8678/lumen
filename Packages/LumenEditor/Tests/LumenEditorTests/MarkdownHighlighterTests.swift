@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import LumenBenchmark
 import XCTest
 
 @testable import LumenEditor
@@ -20,12 +21,12 @@ final class MarkdownHighlighterTests: XCTestCase {
 
     func testFindsCommonTokens() {
         let text = """
-        # Heading
-        Some **bold** and *italic* and `code` here.
-        - item one
-        > quoted
-        [label](https://example.com)
-        """
+            # Heading
+            Some **bold** and *italic* and `code` here.
+            - item one
+            > quoted
+            [label](https://example.com)
+            """
         let theme = MarkdownHighlightTheme.default
         let spans = highlighter.styledRanges(
             in: text,
@@ -33,8 +34,9 @@ final class MarkdownHighlighterTests: XCTestCase {
             theme: theme
         )
         // Expect a non-trivial number of styled spans across the token types.
-        XCTAssertGreaterThanOrEqual(spans.count, 6,
-                                    "Expected heading/bold/italic/code/list/quote/link spans")
+        XCTAssertGreaterThanOrEqual(
+            spans.count, 6,
+            "Expected heading/bold/italic/code/list/quote/link spans")
     }
 
     func testEmptyRangeProducesNoSpans() {
@@ -51,7 +53,7 @@ final class MarkdownHighlighterTests: XCTestCase {
     /// Highlights only a viewport-sized slice (~80 lines) of a 70k-line doc and
     /// asserts it is cheap — this is what runs on every keystroke / scroll tick.
     func testViewportHighlightStaysCheapOnLargeDoc() {
-        let text = SampleContent.syntheticMarkdown(lineCount: largeLineCount)
+        let text = SyntheticData.markdownDocument(lineCount: largeLineCount)
         let ns = text as NSString
         // A viewport-sized window near the middle of the document.
         let approxMid = ns.length / 2
@@ -69,7 +71,7 @@ final class MarkdownHighlighterTests: XCTestCase {
 
     /// Single-paragraph re-highlight (what `textDidChange` triggers per edit).
     func testSingleParagraphHighlightIsFast() {
-        let text = SampleContent.syntheticMarkdown(lineCount: largeLineCount)
+        let text = SyntheticData.markdownDocument(lineCount: largeLineCount)
         let ns = text as NSString
         let paragraph = ns.paragraphRange(for: NSRange(location: ns.length / 3, length: 0))
         let theme = MarkdownHighlightTheme.default

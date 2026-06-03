@@ -40,8 +40,10 @@ public struct TextKit2EditorView: NSViewRepresentable {
     ///   - text: A two-way binding to the document text.
     ///   - highlightTheme: Colors/fonts for syntax highlighting. Defaults to
     ///     the ad-hoc theme until design tokens (P1.17) inject one.
-    public init(text: Binding<String>,
-                highlightTheme: MarkdownHighlightTheme = .default) {
+    public init(
+        text: Binding<String>,
+        highlightTheme: MarkdownHighlightTheme = .default
+    ) {
         self._text = text
         self.highlightTheme = highlightTheme
     }
@@ -72,12 +74,14 @@ public struct TextKit2EditorView: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.minSize = NSSize(width: 0, height: 0)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
-                                  height: CGFloat.greatestFiniteMagnitude)
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude)
         if let container = textView.textContainer {
             container.widthTracksTextView = true
-            container.containerSize = NSSize(width: 0,
-                                             height: CGFloat.greatestFiniteMagnitude)
+            container.containerSize = NSSize(
+                width: 0,
+                height: CGFloat.greatestFiniteMagnitude)
         }
 
         // Seed initial contents through the TextKit 2 content storage.
@@ -169,15 +173,19 @@ public struct TextKit2EditorView: NSViewRepresentable {
         /// fragments at the top and bottom of the visible rect (no full scan).
         private func viewportCharRange(in textView: NSTextView) -> NSRange? {
             guard let layoutManager = textView.textLayoutManager,
-                  let contentManager = textView.textContentStorage else { return nil }
+                let contentManager = textView.textContentStorage
+            else { return nil }
             let visible = textView.visibleRect
             guard visible.height > 0,
-                  let topFragment = layoutManager.textLayoutFragment(for: CGPoint(x: 0, y: visible.minY)),
-                  let bottomFragment = layoutManager.textLayoutFragment(for: CGPoint(x: 0, y: visible.maxY))
+                let topFragment = layoutManager.textLayoutFragment(
+                    for: CGPoint(x: 0, y: visible.minY)),
+                let bottomFragment = layoutManager.textLayoutFragment(
+                    for: CGPoint(x: 0, y: visible.maxY))
             else { return nil }
             let start = topFragment.rangeInElement.location
             let end = bottomFragment.rangeInElement.endLocation
-            let location = contentManager.offset(from: contentManager.documentRange.location, to: start)
+            let location = contentManager.offset(
+                from: contentManager.documentRange.location, to: start)
             let length = contentManager.offset(from: start, to: end)
             guard location != NSNotFound, length > 0 else { return nil }
             let ns = textView.string as NSString
@@ -195,8 +203,11 @@ public struct TextKit2EditorView: NSViewRepresentable {
             let spans = highlighter.styledRanges(in: storage.string, range: scan, theme: theme)
             storage.beginEditing()
             // Reset to body style first so stale colors clear when markers change.
-            storage.setAttributes([.foregroundColor: theme.bodyColor,
-                                   .font: theme.baseFont], range: scan)
+            storage.setAttributes(
+                [
+                    .foregroundColor: theme.bodyColor,
+                    .font: theme.baseFont,
+                ], range: scan)
             for span in spans {
                 let clamped = NSIntersectionRange(span.range, scan)
                 if clamped.length > 0 {
@@ -210,8 +221,9 @@ public struct TextKit2EditorView: NSViewRepresentable {
         func setText(_ newText: String, in textView: NSTextView) {
             if let storage = textView.textContentStorage?.textStorage {
                 storage.replaceCharacters(
-                    in: NSRange(location: 0,
-                                length: (textView.string as NSString).length),
+                    in: NSRange(
+                        location: 0,
+                        length: (textView.string as NSString).length),
                     with: newText
                 )
             } else {

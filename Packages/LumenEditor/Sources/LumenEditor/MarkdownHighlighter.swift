@@ -79,19 +79,27 @@ public struct MarkdownHighlighter: Sendable {
             let line = ns.substring(with: lineRange)
 
             // Fenced code blocks (the ``` lines + everything between).
-            if Self.fenceRE.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil {
-                spans.append(StyledRange(range: lineRange, attributes: [
-                    .foregroundColor: theme.fenceColor,
-                    .font: theme.baseFont,
-                ]))
+            if Self.fenceRE.firstMatch(
+                in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+            {
+                spans.append(
+                    StyledRange(
+                        range: lineRange,
+                        attributes: [
+                            .foregroundColor: theme.fenceColor,
+                            .font: theme.baseFont,
+                        ]))
                 insideFence.toggle()
                 return
             }
             if insideFence {
-                spans.append(StyledRange(range: lineRange, attributes: [
-                    .foregroundColor: theme.codeColor,
-                    .font: theme.baseFont,
-                ]))
+                spans.append(
+                    StyledRange(
+                        range: lineRange,
+                        attributes: [
+                            .foregroundColor: theme.codeColor,
+                            .font: theme.baseFont,
+                        ]))
                 return
             }
 
@@ -114,57 +122,93 @@ public struct MarkdownHighlighter: Sendable {
 
         // Headings color the whole line.
         if Self.headingRE.firstMatch(in: line, range: local) != nil {
-            spans.append(StyledRange(range: lineRange, attributes: [
-                .foregroundColor: theme.headingColor,
-                .font: theme.boldFont,
-            ]))
+            spans.append(
+                StyledRange(
+                    range: lineRange,
+                    attributes: [
+                        .foregroundColor: theme.headingColor,
+                        .font: theme.boldFont,
+                    ]))
             return
         }
 
         // Blockquote markers.
         if let m = Self.blockquoteRE.firstMatch(in: line, range: local) {
-            spans.append(StyledRange(range: offset(m.range(at: 1), by: lineRange.location),
-                                     attributes: [.foregroundColor: theme.quoteColor,
-                                                  .font: theme.boldFont]))
+            spans.append(
+                StyledRange(
+                    range: offset(m.range(at: 1), by: lineRange.location),
+                    attributes: [
+                        .foregroundColor: theme.quoteColor,
+                        .font: theme.boldFont,
+                    ]))
         }
 
         // List markers.
         if let m = Self.listRE.firstMatch(in: line, range: local) {
-            spans.append(StyledRange(range: offset(m.range(at: 2), by: lineRange.location),
-                                     attributes: [.foregroundColor: theme.listMarkerColor,
-                                                  .font: theme.boldFont]))
+            spans.append(
+                StyledRange(
+                    range: offset(m.range(at: 2), by: lineRange.location),
+                    attributes: [
+                        .foregroundColor: theme.listMarkerColor,
+                        .font: theme.boldFont,
+                    ]))
         }
 
         // Inline tokens.
-        spans.append(contentsOf: matches(Self.linkRE, in: line, lineRange: lineRange) { match in
-            var out: [StyledRange] = []
-            if match.numberOfRanges >= 3 {
-                out.append(StyledRange(range: offset(match.range(at: 1), by: lineRange.location),
-                                       attributes: [.foregroundColor: theme.linkTextColor,
-                                                    .underlineStyle: NSUnderlineStyle.single.rawValue]))
-                out.append(StyledRange(range: offset(match.range(at: 2), by: lineRange.location),
-                                       attributes: [.foregroundColor: theme.linkURLColor]))
-            }
-            return out
-        })
+        spans.append(
+            contentsOf: matches(Self.linkRE, in: line, lineRange: lineRange) { match in
+                var out: [StyledRange] = []
+                if match.numberOfRanges >= 3 {
+                    out.append(
+                        StyledRange(
+                            range: offset(match.range(at: 1), by: lineRange.location),
+                            attributes: [
+                                .foregroundColor: theme.linkTextColor,
+                                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                            ]))
+                    out.append(
+                        StyledRange(
+                            range: offset(match.range(at: 2), by: lineRange.location),
+                            attributes: [.foregroundColor: theme.linkURLColor]))
+                }
+                return out
+            })
 
-        spans.append(contentsOf: matches(Self.boldRE, in: line, lineRange: lineRange) { match in
-            [StyledRange(range: offset(match.range, by: lineRange.location),
-                         attributes: [.foregroundColor: theme.emphasisColor,
-                                      .font: theme.boldFont])]
-        })
+        spans.append(
+            contentsOf: matches(Self.boldRE, in: line, lineRange: lineRange) { match in
+                [
+                    StyledRange(
+                        range: offset(match.range, by: lineRange.location),
+                        attributes: [
+                            .foregroundColor: theme.emphasisColor,
+                            .font: theme.boldFont,
+                        ])
+                ]
+            })
 
-        spans.append(contentsOf: matches(Self.italicRE, in: line, lineRange: lineRange) { match in
-            [StyledRange(range: offset(match.range, by: lineRange.location),
-                         attributes: [.foregroundColor: theme.emphasisColor,
-                                      .font: theme.italicFont])]
-        })
+        spans.append(
+            contentsOf: matches(Self.italicRE, in: line, lineRange: lineRange) { match in
+                [
+                    StyledRange(
+                        range: offset(match.range, by: lineRange.location),
+                        attributes: [
+                            .foregroundColor: theme.emphasisColor,
+                            .font: theme.italicFont,
+                        ])
+                ]
+            })
 
-        spans.append(contentsOf: matches(Self.inlineCodeRE, in: line, lineRange: lineRange) { match in
-            [StyledRange(range: offset(match.range, by: lineRange.location),
-                         attributes: [.foregroundColor: theme.codeColor,
-                                      .font: theme.baseFont])]
-        })
+        spans.append(
+            contentsOf: matches(Self.inlineCodeRE, in: line, lineRange: lineRange) { match in
+                [
+                    StyledRange(
+                        range: offset(match.range, by: lineRange.location),
+                        attributes: [
+                            .foregroundColor: theme.codeColor,
+                            .font: theme.baseFont,
+                        ])
+                ]
+            })
     }
 
     // MARK: - Helpers
