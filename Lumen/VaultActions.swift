@@ -61,34 +61,6 @@ private func describe(_ error: VaultError) -> String {
     }
 }
 
-/// Creates a new note in the vault root via `FileService` (P1.5), off-main.
-///
-/// Selected-folder targeting, rename, delete, and reveal-in-Finder are P1.15.
-@MainActor
-func createNoteInVaultRoot(_ env: AppEnvironment) {
-    guard let root = env.vault.current?.root else { return }
-    Task {
-        do {
-            _ = try await env.files.createNote(in: root)
-        } catch {
-            logger.error("New note failed: \(String(describing: error), privacy: .public)")
-        }
-    }
-}
-
-/// Creates a new folder in the vault root via `FileService` (P1.5), off-main.
-@MainActor
-func createFolderInVaultRoot(_ env: AppEnvironment) {
-    guard let root = env.vault.current?.root else { return }
-    Task {
-        do {
-            _ = try await env.files.createFolder(in: root)
-        } catch {
-            logger.error("New folder failed: \(String(describing: error), privacy: .public)")
-        }
-    }
-}
-
 /// The File-menu commands: new note/folder + vault open/close/recents.
 struct VaultCommands: Commands {
     let env: AppEnvironment
@@ -96,19 +68,29 @@ struct VaultCommands: Commands {
     private var manager: VaultManager { env.vault }
 
     var body: some Commands {
-        // New Note / New Folder act on the vault root (selected-folder is P1.15).
+        // New Note / New Folder target the file-tree selection (P1.15), falling
+        // back to the vault root.
         CommandGroup(replacing: .newItem) {
             Button("New Note") {
-                createNoteInVaultRoot(env)
+                Task { await env.fileTree.newNote() }
             }
             .keyboardShortcut("n", modifiers: [.command])
             .disabled(!VaultPresentation.canActOnVault(manager.current))
 
             Button("New Folder") {
-                createFolderInVaultRoot(env)
+                Task { await env.fileTree.newFolder() }
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(!VaultPresentation.canActOnVault(manager.current))
+        }
+
+        // Save the open document (manual ⌘S; autosave is P1.11).
+        CommandGroup(replacing: .saveItem) {
+            Button("Save") {
+                Task { try? await env.document.save() }
+            }
+            .keyboardShortcut("s", modifiers: [.command])
+            .disabled(env.document.url == nil)
         }
 
         CommandGroup(after: .newItem) {

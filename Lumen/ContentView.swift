@@ -28,18 +28,22 @@ struct ContentView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var editorText: String = SampleContent.welcomeMarkdown
 
     var body: some View {
+        @Bindable var document = env.document
         let theme = themeManager.theme
         return NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 380)
         } detail: {
-            EditorRegion(text: $editorText, theme: theme)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    TabStripView(title: env.vault.current?.name)
-                }
+            EditorRegion(
+                text: $document.text,
+                isEnabled: document.url != nil,
+                theme: theme
+            )
+            .safeAreaInset(edge: .top, spacing: 0) {
+                TabStripView(title: env.document.url?.lastPathComponent ?? env.vault.current?.name)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             StatusBarView()
@@ -51,17 +55,27 @@ struct ContentView: View {
 // MARK: - Center editor region
 
 /// The center region: the working TextKit 2 editor on a token-colored canvas.
+/// Shows an empty-state hint when no document is open.
 private struct EditorRegion: View {
     @Binding var text: String
+    let isEnabled: Bool
     let theme: Theme
 
     var body: some View {
-        TextKit2EditorView(
-            text: $text,
-            highlightTheme: MarkdownHighlightTheme(theme: theme)
-        )
+        ZStack {
+            theme.color(.editorBackground)
+            if isEnabled {
+                TextKit2EditorView(
+                    text: $text,
+                    highlightTheme: MarkdownHighlightTheme(theme: theme)
+                )
+            } else {
+                Label("Select a note to start editing", systemImage: "doc.text")
+                    .font(Typography.font(.body))
+                    .foregroundStyle(theme.color(.textPlaceholder))
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(theme.color(.editorBackground))
     }
 }
 
@@ -141,39 +155,14 @@ private struct SidebarView: View {
             Divider()
                 .overlay(theme.color(.separator))
 
-            FileTreePlaceholder(hasVault: env.vault.current != nil, theme: theme)
+            FileTreeView()
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // The NavigationSplitView sidebar is already a native translucent
         // (Liquid Glass) surface; we layer token-colored content on top.
         .navigationTitle(env.vault.current?.name ?? "Lumen")
-    }
-}
-
-/// Placeholder for the file tree (real tree + context menu is P1.15).
-private struct FileTreePlaceholder: View {
-    let hasVault: Bool
-    let theme: Theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            if hasVault {
-                Label("No files yet", systemImage: "tray")
-                    .font(Typography.font(.callout))
-                    .foregroundStyle(theme.color(.textSecondary))
-                Text("The file tree arrives soon.")
-                    .font(Typography.font(.caption))
-                    .foregroundStyle(theme.color(.textPlaceholder))
-            } else {
-                Label("Open a vault to begin", systemImage: "folder.badge.plus")
-                    .font(Typography.font(.callout))
-                    .foregroundStyle(theme.color(.textSecondary))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Spacing.md)
     }
 }
 

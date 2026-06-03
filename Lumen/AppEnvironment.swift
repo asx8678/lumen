@@ -29,12 +29,23 @@ public final class AppEnvironment {
     /// Appearance + accent theming engine (P1.17).
     public let theme: ThemeManager
 
+    /// The currently open document (single doc for now; P1.16 extends to tabs).
+    public let document: DocumentSession
+
+    /// Sidebar file-tree state + operations (P1.15). Hosted here so the File
+    /// menu and the sidebar share one selection.
+    let fileTree: FileTreeModel
+
     /// Creates the composition root with fresh services. `VaultManager` reopens
     /// the last vault on launch (P1.4).
     public init() {
-        self.vault = VaultManager()
-        self.files = FileService()
+        let files = FileService()
+        let vault = VaultManager()
+        self.vault = vault
+        self.files = files
         self.theme = ThemeManager()
+        self.document = DocumentSession(files: files)
+        self.fileTree = FileTreeModel(vault: vault, files: files)
     }
 
     /// Creates the composition root with injected services (for previews/tests).
@@ -46,5 +57,7 @@ public final class AppEnvironment {
         self.vault = vault
         self.files = files
         self.theme = theme ?? ThemeManager()
+        self.document = DocumentSession(files: files)
+        self.fileTree = FileTreeModel(vault: vault, files: files)
     }
 }
