@@ -178,7 +178,7 @@ public enum FrontmatterParser {
     // Configured once and only read (parsing/formatting) thereafter; the
     // formatters are effectively immutable, so cross-actor reads are safe.
     nonisolated(unsafe) private static let iso8601 = ISO8601DateFormatter()
-    nonisolated(unsafe) private static let dayFormatter: DateFormatter = {
+    private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")

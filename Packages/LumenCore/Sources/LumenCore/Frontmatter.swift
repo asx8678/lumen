@@ -11,7 +11,7 @@ import Foundation
 
 /// A `Sendable` representation of an arbitrary YAML scalar/collection value, so
 /// frontmatter keys we don't model explicitly are still preserved losslessly.
-public enum YAMLValue: Sendable, Equatable, Hashable {
+public enum YAMLValue: Sendable, Equatable, Hashable, Codable {
     case string(String)
     case int(Int)
     case double(Double)
@@ -19,6 +19,38 @@ public enum YAMLValue: Sendable, Equatable, Hashable {
     case null
     case array([YAMLValue])
     case dictionary([String: YAMLValue])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([YAMLValue].self) {
+            self = .array(value)
+        } else {
+            self = .dictionary(try container.decode([String: YAMLValue].self))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .int(let value): try container.encode(value)
+        case .double(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        case .array(let value): try container.encode(value)
+        case .dictionary(let value): try container.encode(value)
+        }
+    }
 
     /// The value as a `String` when it is a scalar (string/int/double/bool).
     public var stringValue: String? {
@@ -44,7 +76,7 @@ public enum YAMLValue: Sendable, Equatable, Hashable {
 ///
 /// Commonly-used fields are surfaced as typed properties; every key (including
 /// the typed ones) is also available verbatim in ``raw`` for arbitrary access.
-public struct Frontmatter: Sendable, Equatable {
+public struct Frontmatter: Sendable, Equatable, Codable {
     /// `title`, if present.
     public var title: String?
     /// `tags`, normalized from a scalar or array to `[String]`.
