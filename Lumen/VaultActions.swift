@@ -61,12 +61,58 @@ private func describe(_ error: VaultError) -> String {
     }
 }
 
-/// The File-menu commands for vault management.
+/// Creates a new note in the vault root via `FileService` (P1.5), off-main.
+///
+/// Selected-folder targeting, rename, delete, and reveal-in-Finder are P1.15.
+@MainActor
+func createNoteInVaultRoot(_ env: AppEnvironment) {
+    guard let root = env.vault.current?.root else { return }
+    Task {
+        do {
+            _ = try await env.files.createNote(in: root)
+        } catch {
+            logger.error("New note failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+}
+
+/// Creates a new folder in the vault root via `FileService` (P1.5), off-main.
+@MainActor
+func createFolderInVaultRoot(_ env: AppEnvironment) {
+    guard let root = env.vault.current?.root else { return }
+    Task {
+        do {
+            _ = try await env.files.createFolder(in: root)
+        } catch {
+            logger.error("New folder failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+}
+
+/// The File-menu commands: new note/folder + vault open/close/recents.
 struct VaultCommands: Commands {
-    let manager: VaultManager
+    let env: AppEnvironment
+
+    private var manager: VaultManager { env.vault }
 
     var body: some Commands {
+        // New Note / New Folder act on the vault root (selected-folder is P1.15).
+        CommandGroup(replacing: .newItem) {
+            Button("New Note") {
+                createNoteInVaultRoot(env)
+            }
+            .keyboardShortcut("n", modifiers: [.command])
+            .disabled(!VaultPresentation.canActOnVault(manager.current))
+
+            Button("New Folder") {
+                createFolderInVaultRoot(env)
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+            .disabled(!VaultPresentation.canActOnVault(manager.current))
+        }
+
         CommandGroup(after: .newItem) {
+            Divider()
             Button("Open Vault…") {
                 presentOpenVaultPanel(into: manager)
             }
@@ -88,7 +134,7 @@ struct VaultCommands: Commands {
             Button("Close Vault") {
                 manager.closeVault()
             }
-            .disabled(manager.current == nil)
+            .disabled(!VaultPresentation.canActOnVault(manager.current))
         }
     }
 }

@@ -117,6 +117,13 @@ public final class VaultManager {
         current = nil
     }
 
+    /// Releases security-scoped access on app termination without clearing
+    /// `current` (the persisted recents already remember the last vault, so the
+    /// next launch reopens it via P1.4). Safe to call when no vault is open.
+    public func releaseAccessForTermination() {
+        stopAccessing()
+    }
+
     // MARK: - Recents
 
     /// Reopens a recent vault by resolving its stored bookmark.

@@ -42,11 +42,11 @@ struct ContentView: View {
 
 /// Left sidebar — shows the current vault's name/path (file tree is P1.15).
 private struct SidebarPlaceholder: View {
-    @Environment(VaultManager.self) private var vault
+    @Environment(AppEnvironment.self) private var env
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            VaultHeader(vault: vault.current)
+            VaultHeader(vault: env.vault.current)
                 .padding(12)
             Divider()
             Spacer()
@@ -56,7 +56,7 @@ private struct SidebarPlaceholder: View {
                 .frame(maxWidth: .infinity)
             Spacer()
         }
-        .navigationTitle(vault.current?.name ?? "Lumen")
+        .navigationTitle(env.vault.current?.name ?? "Lumen")
     }
 }
 
@@ -106,5 +106,5 @@ private struct StatusBarPlaceholder: View {
 
 #Preview {
     ContentView()
-        .environment(VaultManager(reopenLast: false))
+        .environment(AppEnvironment(vault: VaultManager(reopenLast: false)))
 }
