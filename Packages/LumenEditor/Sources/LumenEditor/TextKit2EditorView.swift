@@ -68,6 +68,8 @@ public struct TextKit2EditorView: NSViewRepresentable {
         // NSTextLayoutManager / NSTextContentStorage stack with viewport layout.
         let textView = NSTextView(usingTextLayoutManager: true)
         textView.delegate = context.coordinator
+        // P1.21 UI test hook: lets XCUITest locate the editor text area.
+        textView.setAccessibilityIdentifier("editor-textview")
         textView.isEditable = true
         textView.isSelectable = true
         textView.isRichText = false

@@ -14,6 +14,7 @@
 
 /* Begin PBXFileReference section */
 		A794E2EB2FCFDD7300FCACD3 /* Lumen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lumen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000F01 /* LumenUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LumenUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -22,7 +23,22 @@
 			path = Lumen;
 			sourceTree = "<group>";
 		};
+		AA0000000000000000000F02 /* LumenUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LumenUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000F08 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A794E2E32FCFDD7300FCACD3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A794E2EA2FCFDD7300FCACD3;
+			remoteInfo = Lumen;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A794E2E82FCFDD7300FCACD3 /* Frameworks */ = {
@@ -35,6 +51,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000F05 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -42,6 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				A794E2ED2FCFDD7300FCACD3 /* Lumen */,
+				AA0000000000000000000F02 /* LumenUITests */,
 				A794E2EC2FCFDD7300FCACD3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -50,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				A794E2EB2FCFDD7300FCACD3 /* Lumen.app */,
+				AA0000000000000000000F01 /* LumenUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -82,7 +107,38 @@
 			productReference = A794E2EB2FCFDD7300FCACD3 /* Lumen.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0000000000000000000F03 /* LumenUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000F0B /* Build configuration list for PBXNativeTarget "LumenUITests" */;
+			buildPhases = (
+				AA0000000000000000000F04 /* Sources */,
+				AA0000000000000000000F05 /* Frameworks */,
+				AA0000000000000000000F06 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000000F07 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000F02 /* LumenUITests */,
+			);
+			name = LumenUITests;
+			packageProductDependencies = (
+			);
+			productName = LumenUITests;
+			productReference = AA0000000000000000000F01 /* LumenUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000F07 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A794E2EA2FCFDD7300FCACD3 /* Lumen */;
+			targetProxy = AA0000000000000000000F08 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		A794E2E32FCFDD7300FCACD3 /* Project object */ = {
@@ -94,6 +150,10 @@
 				TargetAttributes = {
 					A794E2EA2FCFDD7300FCACD3 = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					AA0000000000000000000F03 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = A794E2EA2FCFDD7300FCACD3;
 					};
 				};
 			};
@@ -117,6 +177,7 @@
 			projectRoot = "";
 			targets = (
 				A794E2EA2FCFDD7300FCACD3 /* Lumen */,
+				AA0000000000000000000F03 /* LumenUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -129,10 +190,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000F06 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A794E2E72FCFDD7300FCACD3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000F04 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -318,6 +393,40 @@
 			};
 			name = Release;
 		};
+		AA0000000000000000000F09 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.Lumen.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Lumen;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000F0A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.Lumen.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Lumen;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -335,6 +444,15 @@
 			buildConfigurations = (
 				A794E2F72FCFDD7300FCACD3 /* Debug */,
 				A794E2F82FCFDD7300FCACD3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000F0B /* Build configuration list for PBXNativeTarget "LumenUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000F09 /* Debug */,
+				AA0000000000000000000F0A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

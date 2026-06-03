@@ -81,9 +81,84 @@ public final class VaultManager {
     ///   - reopenLast: When `true`, attempts to reopen the most-recent vault.
     public init(defaults: UserDefaults = .standard, reopenLast: Bool = true) {
         self.defaults = defaults
+
+        // Test hooks (P1.21 UI test). Inert in normal use — only activated by an
+        // explicit launch environment, so production behavior is unchanged.
+        let environment = ProcessInfo.processInfo.environment
+        if environment["LUMEN_RESET_STATE"] == "1" {
+            defaults.removeObject(forKey: Self.recentsKey)
+        }
         self.recents = Self.loadRecents(from: defaults)
-        if reopenLast {
+
+        // Seed + open a vault the APP itself owns, inside its own (writable)
+        // sandbox container Documents. The XCUITest runner is sandboxed too —
+        // with a DIFFERENT container — so a vault seeded by the runner is not
+        // writable (or even reachable) by the app. Letting the app create the
+        // vault in its own Documents guarantees the full open→edit→save→reopen
+        // round-trip works. Inert unless `LUMEN_SEED_VAULT` is set at launch.
+        if let vaultName = environment["LUMEN_SEED_VAULT"], !vaultName.isEmpty,
+            let url = seedTestVault(
+                named: vaultName,
+                note: environment["LUMEN_SEED_NOTE"] ?? "Welcome.md",
+                body: environment["LUMEN_SEED_BODY"],
+                reset: environment["LUMEN_RESET_STATE"] == "1")
+        {
+            openForTesting(at: url)
+        } else if let testPath = environment["LUMEN_TEST_VAULT"], !testPath.isEmpty {
+            openForTesting(at: URL(fileURLWithPath: testPath))
+        } else if reopenLast {
             reopenMostRecent()
+        }
+    }
+
+    /// Seeds a UI-test vault inside the app's own container Documents: creates
+    /// `Documents/<name>` and writes a starter note when absent. Because the
+    /// app creates the folder in its own sandbox home, it has full read/write —
+    /// enabling the open→edit→save→reopen round-trip the P1.21 test exercises.
+    /// - Returns: The vault folder URL, or `nil` if it could not be created.
+    private func seedTestVault(
+        named name: String, note: String, body: String?, reset: Bool
+    )
+        -> URL?
+    {
+        let fileManager = FileManager.default
+        guard
+            let documents = try? fileManager.url(
+                for: .documentDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true)
+        else { return nil }
+        let vaultURL = documents.appendingPathComponent(name, isDirectory: true)
+        // A clean run starts from known seed content (remove any prior vault).
+        if reset { try? fileManager.removeItem(at: vaultURL) }
+        do {
+            try fileManager.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+        } catch {
+            return nil
+        }
+        let noteURL = vaultURL.appendingPathComponent(note)
+        if !fileManager.fileExists(atPath: noteURL.path) {
+            try? (body ?? "# Welcome\n\noriginal body").write(
+                to: noteURL, atomically: true, encoding: .utf8)
+        }
+        return vaultURL
+    }
+
+    /// Opens a vault directly by path for UI testing, bypassing the
+    /// `NSOpenPanel` (which XCUITest cannot drive). Persists the vault to
+    /// recents so a subsequent relaunch reopens it through the normal path.
+    /// Inert unless `LUMEN_TEST_VAULT` is set at launch.
+    private func openForTesting(at url: URL) {
+        stopAccessing()
+        // The test process owns the path; best-effort security-scoped access.
+        _ = url.startAccessingSecurityScopedResource()
+        accessedURL = url
+        current = Vault(root: url)
+        if let bookmark = try? url.bookmarkData(
+            options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        {
+            let entry = RecentVault(name: url.lastPathComponent, path: url.path, bookmark: bookmark)
+            recents = RecentVaultsPolicy.updating(recents, adding: entry)
+            persistRecents()
         }
     }
 

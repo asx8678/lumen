@@ -154,6 +154,8 @@ private struct FileRow: View {
         }
         .lineLimit(1)
         .disabled(item.kind == .other)
+        // P1.21 UI test hook: address rows by name (e.g. "file-row-Welcome.md").
+        .accessibilityIdentifier("file-row-\(item.name)")
     }
 
     private var color: Color {
