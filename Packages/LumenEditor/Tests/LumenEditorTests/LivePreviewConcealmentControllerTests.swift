@@ -104,4 +104,45 @@ final class LivePreviewConcealmentControllerTests: XCTestCase {
         // the geometry reflects only visible characters (no zero-width tricks).
         XCTAssertLessThan(width(concealLM), width(plainLM))
     }
+
+    // MARK: - Widget substitutions (P2.2.1d)
+
+    func testWidgetSubstitutionReplacesSourceInDisplayOnly() {
+        let controller = LivePreviewConcealmentController()
+        controller.isEnabled = true
+        let text = "[Apple](https://apple.com)\n"
+        // Replace the whole link source with its display label "Apple".
+        let source = NSRange(location: 0, length: 26)
+        controller.update(widgets: [
+            .init(range: source, attributed: NSAttributedString(string: "Apple"))
+        ])
+        let (layoutManager, storage) = makeStack(text, controller: controller)
+        XCTAssertEqual(displayString(layoutManager), "Apple\n", "widget rendered in display")
+        // Backing store still holds raw Markdown → copy/undo see real source.
+        XCTAssertEqual(storage.textStorage?.string, text)
+    }
+
+    func testWidgetSourceRangeIsAtomic() {
+        let controller = LivePreviewConcealmentController()
+        controller.isEnabled = true
+        let source = NSRange(location: 0, length: 26)
+        controller.update(concealed: [NSRange(location: 40, length: 2)])
+        controller.update(widgets: [
+            .init(range: source, attributed: NSAttributedString(string: "Apple"))
+        ])
+        // atomicRanges must include BOTH the concealed marker and the widget.
+        XCTAssertTrue(controller.atomicRanges.contains(source))
+        XCTAssertTrue(controller.atomicRanges.contains(NSRange(location: 40, length: 2)))
+    }
+
+    func testResetClearsWidgets() {
+        let controller = LivePreviewConcealmentController()
+        controller.update(widgets: [
+            .init(
+                range: NSRange(location: 0, length: 4), attributed: NSAttributedString(string: "x"))
+        ])
+        XCTAssertFalse(controller.widgetSubstitutions.isEmpty)
+        controller.reset()
+        XCTAssertTrue(controller.widgetSubstitutions.isEmpty)
+    }
 }

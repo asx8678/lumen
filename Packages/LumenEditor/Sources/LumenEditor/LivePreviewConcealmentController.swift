@@ -57,6 +57,23 @@ public final class LivePreviewConcealmentController: NSObject,
     /// Current bullet substitutions (document coordinates).
     private(set) var substitutions: [Substitution] = []
 
+    /// A Widget-class display substitution (P2.2.1d): replace a source range
+    /// with a fully-styled attributed string (a link pill, an image/HR
+    /// attachment, …) without mutating the store. Unlike bullets these ARE
+    /// reveal-gated — the coordinator only feeds widgets whose line is inactive
+    /// (a widget reverts to raw source on its active line).
+    struct WidgetSubstitution: Equatable {
+        let range: NSRange
+        let attributed: NSAttributedString
+
+        static func == (lhs: WidgetSubstitution, rhs: WidgetSubstitution) -> Bool {
+            lhs.range == rhs.range && lhs.attributed.isEqual(to: rhs.attributed)
+        }
+    }
+
+    /// Current widget substitutions (document coordinates).
+    private(set) var widgetSubstitutions: [WidgetSubstitution] = []
+
     /// Per-paragraph indentation to apply to the display string for list items
     /// and blockquotes (head indent + hang indent). Keyed by a backing range
     /// that falls inside the target paragraph; the whole display paragraph
@@ -108,9 +125,27 @@ public final class LivePreviewConcealmentController: NSObject,
         return true
     }
 
+    /// Replaces the widget-substitution set and returns `true` if it changed.
+    @discardableResult
+    func update(widgets next: [WidgetSubstitution]) -> Bool {
+        let sorted = next.sorted { $0.range.location < $1.range.location }
+        guard sorted != widgetSubstitutions else { return false }
+        widgetSubstitutions = sorted
+        return true
+    }
+
     /// Whether the delegate currently has anything to substitute on display.
     var hasDisplaySubstitutions: Bool {
-        !concealedRanges.isEmpty || !substitutions.isEmpty || !paragraphIndents.isEmpty
+        !concealedRanges.isEmpty || !substitutions.isEmpty
+            || !paragraphIndents.isEmpty || !widgetSubstitutions.isEmpty
+    }
+
+    /// Ranges the caret must treat as ATOMIC: concealed marker runs PLUS
+    /// rendered widget source ranges (the caret can't land inside a widget's
+    /// raw source while it is rendered). Consumed by `LivePreviewCaretNavigation`
+    /// from the text view's selection hook.
+    var atomicRanges: [NSRange] {
+        concealedRanges + widgetSubstitutions.map(\.range)
     }
 
     /// Clears all concealment (used when the feature flag is turned off).
@@ -118,6 +153,7 @@ public final class LivePreviewConcealmentController: NSObject,
         concealedRanges = []
         substitutions = []
         paragraphIndents = []
+        widgetSubstitutions = []
     }
 
     // MARK: - NSTextContentStorageDelegate
@@ -136,7 +172,8 @@ public final class LivePreviewConcealmentController: NSObject,
         // offsets of not-yet-applied ones.
         struct Edit {
             let range: NSRange
-            let replacement: String?  // nil = delete
+            let replacement: String?  // nil = delete (unless `attributed` set)
+            let attributed: NSAttributedString?  // styled widget replacement
         }
         var edits: [Edit] = []
         for concealed in concealedRanges {
@@ -146,7 +183,7 @@ public final class LivePreviewConcealmentController: NSObject,
                 Edit(
                     range: NSRange(
                         location: hit.location - range.location, length: hit.length),
-                    replacement: nil))
+                    replacement: nil, attributed: nil))
         }
         for substitution in substitutions {
             let hit = NSIntersectionRange(substitution.range, range)
@@ -155,7 +192,21 @@ public final class LivePreviewConcealmentController: NSObject,
                 Edit(
                     range: NSRange(
                         location: hit.location - range.location, length: hit.length),
-                    replacement: substitution.replacement))
+                    replacement: substitution.replacement, attributed: nil))
+        }
+        // Widget substitutions only apply when the WHOLE widget source lies in
+        // this paragraph (a widget never spans paragraphs); replace it wholesale
+        // with its styled attributed rendering.
+        for widget in widgetSubstitutions {
+            guard NSLocationInRange(widget.range.location, range),
+                NSMaxRange(widget.range) <= NSMaxRange(range)
+            else { continue }
+            edits.append(
+                Edit(
+                    range: NSRange(
+                        location: widget.range.location - range.location,
+                        length: widget.range.length),
+                    replacement: nil, attributed: widget.attributed))
         }
 
         // Indentation that targets this paragraph (anchor inside the range).
@@ -166,8 +217,16 @@ public final class LivePreviewConcealmentController: NSObject,
 
         let display = NSMutableAttributedString(
             attributedString: backing.attributedSubstring(from: range))
+        // Applied high→low; skip any edit that overlaps an already-applied one
+        // (e.g. a concealed marker inside a widget's wholesale replacement) so
+        // offsets never shift out from under a pending edit.
+        var appliedLowerBound = display.length
         for edit in edits where NSMaxRange(edit.range) <= display.length {
-            if let replacement = edit.replacement {
+            guard NSMaxRange(edit.range) <= appliedLowerBound else { continue }
+            appliedLowerBound = edit.range.location
+            if let attributed = edit.attributed {
+                display.replaceCharacters(in: edit.range, with: attributed)
+            } else if let replacement = edit.replacement {
                 let attrs = display.attributes(
                     at: edit.range.location, effectiveRange: nil)
                 display.replaceCharacters(

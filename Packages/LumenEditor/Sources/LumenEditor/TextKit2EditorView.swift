@@ -470,6 +470,9 @@ public struct TextKit2EditorView: NSViewRepresentable {
             let barColor = theme.quoteColor
             let codeBoxColor = theme.codeBlockBackgroundColor
             let containerWidth = textView.textContainer?.size.width ?? 0
+            let baseFont = theme.baseFont
+            let linkColor = theme.linkTextColor
+            let placeholderColor = theme.linkURLColor
             Task { @MainActor [weak textView] in
                 await pending?.value
                 let nodes = await parser.nodes(in: scan)
@@ -500,6 +503,26 @@ public struct TextKit2EditorView: NSViewRepresentable {
                 let indents = Self.paragraphIndents(
                     nodes: nodes, text: current, unit: unit)
 
+                // Widget-class (W) decorations: links, wikilinks, inline images
+                // and horizontal rules render in place of their source and
+                // revert FULLY to raw source on the active line (same per-line
+                // reveal rule, but REPLACE instead of conceal).
+                let allWidgets = LivePreviewWidgetDecorations.widgets(
+                    from: nodes, in: current)
+                let (renderedWidgets, _) = LivePreviewWidgetDecorations.resolve(
+                    in: current, selections: selections, widgets: allWidgets)
+                let widgetSubstitutions = renderedWidgets.map { widget in
+                    LivePreviewConcealmentController.WidgetSubstitution(
+                        range: widget.sourceRange,
+                        attributed: LivePreviewWidgetRendering.attributedString(
+                            for: widget,
+                            font: baseFont,
+                            linkColor: linkColor,
+                            ruleColor: barColor,
+                            placeholderColor: placeholderColor,
+                            width: containerWidth))
+                }
+
                 // Region model for the chrome layer (bars + code box).
                 let quoteRegions = LivePreviewBlockDecorations.blockquoteRegions(from: nodes)
                 let codeRegions = LivePreviewBlockDecorations.codeBlockRegions(from: nodes)
@@ -520,9 +543,11 @@ public struct TextKit2EditorView: NSViewRepresentable {
                 let concealChanged = controller.update(concealed: concealed)
                 let subsChanged = controller.update(substitutions: substitutions)
                 let indentChanged = controller.update(paragraphIndents: indents)
+                let widgetsChanged = controller.update(widgets: widgetSubstitutions)
                 let chromeChanged = chromeProvider.update(
                     blockquotes: quoteRegions, codeBlocks: codeRegions)
-                let displayChanged = concealChanged || subsChanged || indentChanged
+                let displayChanged =
+                    concealChanged || subsChanged || indentChanged || widgetsChanged
                 guard displayChanged || chromeChanged else { return }
                 // Mark the viewport's attributes dirty (NOT characters) so the
                 // content storage re-queries the concealing delegate and the
@@ -618,6 +643,31 @@ public struct TextKit2EditorView: NSViewRepresentable {
             recomputeConcealment(in: textView)
         }
 
+        /// Opens a Widget-class link when the user clicks its rendered display
+        /// (P2.2.1d). Markdown links open their URL via the workspace; wikilink
+        /// widgets carry a `lumen-wikilink:` URL whose note resolution is a
+        /// filed follow-up — for now the click is swallowed (no error sound)
+        /// rather than handed to the workspace. Inert unless live preview is on.
+        public func textView(
+            _ textView: NSTextView,
+            clickedOnLink link: Any,
+            at charIndex: Int
+        ) -> Bool {
+            guard enableLivePreview else { return false }
+            let url: URL?
+            switch link {
+            case let value as URL: url = value
+            case let string as String: url = URL(string: string)
+            default: url = nil
+            }
+            guard let url else { return false }
+            if url.scheme == LivePreviewWidgetRendering.wikilinkScheme {
+                // Note resolution pending (needs the vault index in the editor).
+                return true
+            }
+            return NSWorkspace.shared.open(url)
+        }
+
         /// Caret atomicity (P2.2.1a): keep the caret/selection from landing
         /// inside a concealed marker run while a line is inactive. The concealed
         /// set still reflects the *previous* selection at this point (the new
@@ -631,7 +681,11 @@ public struct TextKit2EditorView: NSViewRepresentable {
             toCharacterRanges newSelectedCharRanges: [NSValue]
         ) -> [NSValue] {
             guard enableLivePreview else { return newSelectedCharRanges }
-            let concealed = livePreviewController.concealedRanges
+            // Atomic over BOTH concealed marker runs AND rendered widget source
+            // ranges: the caret can't land inside a `[t](u)` / `[[…]]` / `---`
+            // that is currently rendered, and a selection snaps to include the
+            // whole widget so copy yields well-formed Markdown.
+            let concealed = livePreviewController.atomicRanges
             guard !concealed.isEmpty else { return newSelectedCharRanges }
             let length = (textView.string as NSString).length
             let previous =
