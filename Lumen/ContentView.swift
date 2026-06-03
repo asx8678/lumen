@@ -300,32 +300,100 @@ private struct VaultHeader: View {
     }
 }
 
-// MARK: - Status bar (slim placeholder — metrics are P1.18)
+// MARK: - Status bar (P1.18: word/char count, save state, indexing)
 
-/// Slim bottom status bar. Placeholder only; word/char count, save state, and
-/// the indexing indicator are P1.18.
+/// Slim bottom status bar: live word/character count + save state (left) and a
+/// subtle indexing indicator (right). Counts are recomputed off the typing hot
+/// path (debounced) so large documents stay smooth.
 private struct StatusBarView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
+    @State private var metrics: TextMetrics = .empty
+    @State private var recomputeTask: Task<Void, Never>?
 
     var body: some View {
         let theme = themeManager.theme
+        let active = env.tabs.active
         return HStack(spacing: Spacing.sm) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 6))
-                .foregroundStyle(theme.accentColor)
-            Text(env.vault.current?.name ?? "No vault")
-                .font(Typography.font(.caption))
-                .foregroundStyle(theme.color(.textSecondary))
+            if active != nil {
+                SaveStateLabel(isDirty: active?.isDirty ?? false, theme: theme)
+                Text("·").foregroundStyle(theme.color(.textPlaceholder))
+                Text(countLabel)
+                    .font(Typography.font(.caption))
+                    .foregroundStyle(theme.color(.textSecondary))
+            } else {
+                Text("No note")
+                    .font(Typography.font(.caption))
+                    .foregroundStyle(theme.color(.textPlaceholder))
+            }
+
             Spacer()
-            Text("Lumen")
-                .font(Typography.font(.caption))
-                .foregroundStyle(theme.color(.textPlaceholder))
+
+            IndexingIndicator(status: env.indexingStatus, theme: theme)
         }
         .padding(.horizontal, Spacing.md)
         .frame(height: 26)
         .frame(maxWidth: .infinity)
         .glassChrome(in: .rect)
+        .task(id: active?.id) { recompute(active?.text ?? "") }
+        .onChange(of: active?.text ?? "") { _, newText in
+            scheduleRecompute(newText)
+        }
+    }
+
+    private var countLabel: String {
+        "\(metrics.words.formatted()) words · \(metrics.characters.formatted()) characters"
+    }
+
+    /// Debounces recomputation so each keystroke doesn't re-scan a large doc.
+    private func scheduleRecompute(_ text: String) {
+        recomputeTask?.cancel()
+        recomputeTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            if Task.isCancelled { return }
+            recompute(text)
+        }
+    }
+
+    private func recompute(_ text: String) {
+        metrics = TextMetrics(counting: text)
+    }
+}
+
+/// Save-state chip: a subtle dot + label driven by the document's dirty flag.
+private struct SaveStateLabel: View {
+    let isDirty: Bool
+    let theme: Theme
+
+    var body: some View {
+        let state = SaveState(isDirty: isDirty)
+        HStack(spacing: Spacing.xs) {
+            Circle()
+                .fill(isDirty ? theme.accentColor : theme.color(.textPlaceholder))
+                .frame(width: 6, height: 6)
+            Text(state.label)
+                .font(Typography.font(.caption))
+                .foregroundStyle(theme.color(.textSecondary))
+        }
+    }
+}
+
+/// Understated indexing indicator: a small spinner + count while indexing.
+private struct IndexingIndicator: View {
+    let status: IndexingStatus
+    let theme: Theme
+
+    var body: some View {
+        if status.isIndexing {
+            HStack(spacing: Spacing.xs) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Indexing \(status.processed)/\(status.total)")
+                    .font(Typography.font(.caption))
+                    .foregroundStyle(theme.color(.textPlaceholder))
+            }
+            .transition(.opacity)
+        }
     }
 }
 
