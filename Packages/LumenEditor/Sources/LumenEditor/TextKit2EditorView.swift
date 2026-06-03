@@ -455,6 +455,7 @@ public struct TextKit2EditorView: NSViewRepresentable {
             let selections = textView.selectedRanges.map(\.rangeValue)
             let controller = livePreviewController
             let pending = parseTask
+            let highlightColor = theme.highlightBackgroundColor
             Task { @MainActor [weak textView] in
                 await pending?.value
                 let nodes = await parser.nodes(in: scan)
@@ -467,6 +468,12 @@ public struct TextKit2EditorView: NSViewRepresentable {
                 guard clamp.length > 0 else { return }
                 let (concealed, _) = LivePreviewDecorations.resolve(
                     in: current, selections: selections, nodes: nodes)
+                // Paint highlight (`==x==`) backgrounds in the viewport. The
+                // grammar has no `==` node, so this is the live-preview-only
+                // styling path; the content stays highlighted whether or not
+                // the line is active (only the `==` markers toggle).
+                Self.applyHighlightBackground(
+                    in: storage, scan: clamp, color: highlightColor, text: current)
                 guard controller.update(concealed: concealed) else { return }
                 // Mark the viewport's attributes dirty (NOT characters) so the
                 // content storage re-queries the concealing delegate without
@@ -477,11 +484,60 @@ public struct TextKit2EditorView: NSViewRepresentable {
             }
         }
 
+        /// Overlays the highlight background on every `==x==` content run that
+        /// intersects `scan`, leaving all other attributes untouched.
+        private static func applyHighlightBackground(
+            in storage: NSTextStorage,
+            scan: NSRange,
+            color: NSColor,
+            text: NSString
+        ) {
+            let contentRanges = LivePreviewDecorations.highlightContentRanges(in: text)
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: scan)
+            for content in contentRanges {
+                let clamped = NSIntersectionRange(content, scan)
+                if clamped.length > 0 {
+                    storage.addAttribute(.backgroundColor, value: color, range: clamped)
+                }
+            }
+            storage.endEditing()
+        }
+
         public func textViewDidChangeSelection(_ notification: Notification) {
             guard enableLivePreview,
                 let textView = notification.object as? NSTextView
             else { return }
             recomputeConcealment(in: textView)
+        }
+
+        /// Caret atomicity (P2.2.1a): keep the caret/selection from landing
+        /// inside a concealed marker run while a line is inactive. The concealed
+        /// set still reflects the *previous* selection at this point (the new
+        /// line's reveal happens on `textViewDidChangeSelection`), so we adjust
+        /// the proposed selection off any run interior — stepping over the whole
+        /// run per the spec's atomic-navigation rule. Inert unless the feature
+        /// flag is on and something is currently concealed.
+        public func textView(
+            _ textView: NSTextView,
+            willChangeSelectionFromCharacterRanges oldSelectedCharRanges: [NSValue],
+            toCharacterRanges newSelectedCharRanges: [NSValue]
+        ) -> [NSValue] {
+            guard enableLivePreview else { return newSelectedCharRanges }
+            let concealed = livePreviewController.concealedRanges
+            guard !concealed.isEmpty else { return newSelectedCharRanges }
+            let length = (textView.string as NSString).length
+            let previous =
+                oldSelectedCharRanges.first?.rangeValue
+                ?? NSRange(location: 0, length: 0)
+            return newSelectedCharRanges.map { value in
+                let adjusted = LivePreviewCaretNavigation.adjustedSelection(
+                    proposed: value.rangeValue,
+                    previous: previous,
+                    concealed: concealed,
+                    length: length)
+                return NSValue(range: adjusted)
+            }
         }
 
         // MARK: - NSTextStorageDelegate (parse backbone, P2.0.1)

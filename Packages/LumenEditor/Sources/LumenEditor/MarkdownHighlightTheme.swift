@@ -37,6 +37,10 @@ public struct MarkdownHighlightTheme {
     public var quoteColor: NSColor
     /// Color for emphasis (bold / italic) runs.
     public var emphasisColor: NSColor
+    /// Color for struck-through text (`~~x~~`).
+    public var strikethroughColor: NSColor
+    /// Background color for highlighted text (`==x==`, Obsidian-style).
+    public var highlightBackgroundColor: NSColor
 
     /// Paragraph style applied as the body baseline (line spacing, P1.13). The
     /// highlighter includes it in the reset so typography composes with colors.
@@ -53,6 +57,8 @@ public struct MarkdownHighlightTheme {
         listMarkerColor: NSColor = .systemOrange,
         quoteColor: NSColor = .secondaryLabelColor,
         emphasisColor: NSColor = .labelColor,
+        strikethroughColor: NSColor = .secondaryLabelColor,
+        highlightBackgroundColor: NSColor = .systemYellow.withAlphaComponent(0.35),
         paragraphStyle: NSParagraphStyle = .default
     ) {
         self.baseFont = baseFont
@@ -66,6 +72,8 @@ public struct MarkdownHighlightTheme {
         self.listMarkerColor = listMarkerColor
         self.quoteColor = quoteColor
         self.emphasisColor = emphasisColor
+        self.strikethroughColor = strikethroughColor
+        self.highlightBackgroundColor = highlightBackgroundColor
     }
 
     /// The default ad-hoc theme used until P1.17 injects design tokens.

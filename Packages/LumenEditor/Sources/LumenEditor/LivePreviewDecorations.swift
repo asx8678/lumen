@@ -38,6 +38,9 @@ public enum LivePreviewDecorations {
     ///   heading (the following space is folded in by `markerRanges(from:in:)`).
     /// - `emphasis_delimiter`: a single `*` or `_` delimiter; bold (`**`)
     ///   surfaces as two adjacent delimiters which fold into one concealed run.
+    ///   The Markdown grammar also tags strikethrough `~` delimiters
+    ///   (`~~x~~`, GFM) as `emphasis_delimiter`, so strikethrough markers are
+    ///   concealed by the same rule as bold/italic — no extra node type needed.
     /// - `code_span_delimiter`: a `` ` `` run bounding an inline `code_span`.
     public static let markerNodeTypes: Set<String> = [
         "atx_h1_marker", "atx_h2_marker", "atx_h3_marker",
@@ -83,7 +86,116 @@ public enum LivePreviewDecorations {
             }
             ranges.append(range)
         }
+        // Highlight (`==x==`) is an Obsidian extension that the tree-sitter
+        // Markdown grammar does NOT recognise, so its delimiters never appear
+        // as nodes. Detect balanced spans by scanning the text and fold their
+        // `==` delimiter runs into the concealable-marker set, so they obey the
+        // same per-logical-line reveal rule as the grammar-driven markers.
+        for span in highlightSpans(in: text) {
+            ranges.append(span.open)
+            ranges.append(span.close)
+        }
         return normalize(ranges)
+    }
+
+    // MARK: - Highlight (`==x==`) scanning (no grammar support)
+
+    /// A balanced highlight span: its opening/closing `==` delimiter runs and
+    /// the styled content between them. All ranges are UTF-16 code units.
+    public struct HighlightSpan: Equatable {
+        /// The opening `==` delimiter (length 2).
+        public let open: NSRange
+        /// The closing `==` delimiter (length 2).
+        public let close: NSRange
+        /// The content between the delimiters (the run to style highlighted).
+        public let content: NSRange
+    }
+
+    /// Scans `text` for balanced, single-line `==highlight==` spans.
+    ///
+    /// Honors the spec's gotchas for marker-like inline syntax:
+    /// - **Balanced only:** an unmatched opening `==` (e.g. while typing) is
+    ///   left raw — only a closing `==` on the same logical line decorates.
+    /// - **Escapes:** a `=` preceded by an odd run of backslashes is literal
+    ///   and never starts/ends a span.
+    /// - **Non-empty / non-blank content:** `====` and `==   ==` are ignored
+    ///   (mirrors emphasis flanking — a delimiter must hug real content).
+    /// - **Inline scope:** a span never crosses a newline.
+    ///
+    /// - Parameter text: The document text.
+    /// - Returns: Non-overlapping highlight spans in document order.
+    public static func highlightSpans(in text: NSString) -> [HighlightSpan] {
+        let length = text.length
+        guard length >= 4 else { return [] }
+        var spans: [HighlightSpan] = []
+        var i = 0
+        while i < length - 1 {
+            guard isDelimiter(at: i, in: text) else {
+                i += 1
+                continue
+            }
+            // Found an opening `==` at i; search for a closing `==` on the same
+            // line with non-blank content between.
+            var j = i + 2
+            var found = -1
+            while j < length - 1 {
+                let unit = text.character(at: j)
+                if unit == 0x0A /* newline */ { break }
+                if isDelimiter(at: j, in: text) {
+                    found = j
+                    break
+                }
+                j += 1
+            }
+            guard found > i + 2 else {
+                i += 1
+                continue
+            }
+            let contentRange = NSRange(location: i + 2, length: found - (i + 2))
+            if hasNonBlank(contentRange, in: text) {
+                spans.append(
+                    HighlightSpan(
+                        open: NSRange(location: i, length: 2),
+                        close: NSRange(location: found, length: 2),
+                        content: contentRange))
+                i = found + 2
+            } else {
+                i += 1
+            }
+        }
+        return spans
+    }
+
+    /// The content ranges of every balanced highlight span (the runs to paint
+    /// with the highlight background), for the live-preview styling path.
+    public static func highlightContentRanges(in text: NSString) -> [NSRange] {
+        highlightSpans(in: text).map(\.content)
+    }
+
+    /// Whether a `==` delimiter starts at `index` (two `=` with the first not
+    /// escaped by an odd run of preceding backslashes).
+    private static func isDelimiter(at index: Int, in text: NSString) -> Bool {
+        guard index + 1 < text.length else { return false }
+        guard text.character(at: index) == 0x3D, text.character(at: index + 1) == 0x3D else {
+            return false
+        }
+        // Count preceding backslashes; an odd count escapes the first `=`.
+        var backslashes = 0
+        var k = index - 1
+        while k >= 0, text.character(at: k) == 0x5C /* backslash */ {
+            backslashes += 1
+            k -= 1
+        }
+        return backslashes % 2 == 0
+    }
+
+    /// Whether the range contains at least one non-whitespace UTF-16 unit.
+    private static func hasNonBlank(_ range: NSRange, in text: NSString) -> Bool {
+        for offset in range.location..<NSMaxRange(range) {
+            let unit = text.character(at: offset)
+            if unit != 0x20 && unit != 0x09 { return true }
+        }
+        return false
     }
 
     // MARK: - Active logical lines

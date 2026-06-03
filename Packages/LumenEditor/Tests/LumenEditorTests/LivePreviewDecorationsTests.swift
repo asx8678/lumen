@@ -38,6 +38,81 @@ final class LivePreviewDecorationsTests: XCTestCase {
         XCTAssertEqual(strings.filter { $0 == "`" }.count, 2, "got \(strings)")
     }
 
+    // MARK: - Strikethrough & highlight (extended S-class)
+
+    func testStrikethroughDelimitersAreConcealedOnInactiveLine() async throws {
+        // Strikethrough `~` delimiters surface as `emphasis_delimiter` nodes,
+        // so they conceal by the same rule as bold/italic.
+        let text = "a line\n~~struck~~ here\n"
+        let nodes = try await parse(text)
+        let ns = text as NSString
+        // Caret on line one — line two's strikethrough markers stay concealed.
+        let (concealed, _) = LivePreviewDecorations.resolve(
+            in: ns, selections: [NSRange(location: 0, length: 0)], nodes: nodes)
+        XCTAssertEqual(
+            concealed.filter { ns.substring(with: $0) == "~" }.count, 4,
+            "got \(substrings(concealed, in: text))")
+    }
+
+    func testStrikethroughRevealedOnActiveLine() async throws {
+        let text = "~~struck~~ here\n"
+        let nodes = try await parse(text)
+        let ns = text as NSString
+        let (concealed, revealed) = LivePreviewDecorations.resolve(
+            in: ns, selections: [NSRange(location: 2, length: 0)], nodes: nodes)
+        XCTAssertTrue(concealed.isEmpty, "got \(concealed)")
+        XCTAssertEqual(revealed.filter { ns.substring(with: $0) == "~" }.count, 4)
+    }
+
+    func testHighlightSpansAreScannedAndConcealed() async throws {
+        // `==` is NOT in the grammar — exercise the text scanner via resolve.
+        let text = "plain\n==marked== text\n"
+        let nodes = try await parse(text)
+        let ns = text as NSString
+        let (concealed, _) = LivePreviewDecorations.resolve(
+            in: ns, selections: [NSRange(location: 0, length: 0)], nodes: nodes)
+        XCTAssertTrue(
+            substrings(concealed, in: text).contains("=="),
+            "got \(substrings(concealed, in: text))")
+        XCTAssertEqual(
+            concealed.filter { ns.substring(with: $0) == "==" }.count, 2)
+    }
+
+    func testHighlightSpanContentAndDelimiters() {
+        let text = "==marked== and ==two== end" as NSString
+        let spans = LivePreviewDecorations.highlightSpans(in: text)
+        XCTAssertEqual(spans.count, 2)
+        XCTAssertEqual(text.substring(with: spans[0].open), "==")
+        XCTAssertEqual(text.substring(with: spans[0].content), "marked")
+        XCTAssertEqual(text.substring(with: spans[1].content), "two")
+    }
+
+    func testHighlightIgnoresUnbalancedEmptyEscapedAndMultiline() {
+        // Unbalanced (typing): single opener, no closer.
+        XCTAssertTrue(
+            LivePreviewDecorations.highlightSpans(in: "==typing now" as NSString).isEmpty)
+        // Empty / blank content.
+        XCTAssertTrue(LivePreviewDecorations.highlightSpans(in: "====" as NSString).isEmpty)
+        XCTAssertTrue(
+            LivePreviewDecorations.highlightSpans(in: "==   ==" as NSString).isEmpty)
+        // Escaped opening `=` is literal.
+        XCTAssertTrue(
+            LivePreviewDecorations.highlightSpans(in: "\\==x==" as NSString).isEmpty)
+        // Span may not cross a newline.
+        XCTAssertTrue(
+            LivePreviewDecorations.highlightSpans(in: "==a\nb==" as NSString).isEmpty)
+    }
+
+    func testHighlightRevealedOnActiveLine() async throws {
+        let text = "==marked== text\n"
+        let nodes = try await parse(text)
+        let ns = text as NSString
+        let (concealed, revealed) = LivePreviewDecorations.resolve(
+            in: ns, selections: [NSRange(location: 3, length: 0)], nodes: nodes)
+        XCTAssertTrue(concealed.isEmpty)
+        XCTAssertEqual(revealed.filter { ns.substring(with: $0) == "==" }.count, 2)
+    }
+
     // MARK: - Caret reveal (per-logical-line)
 
     func testCaretOnLineRevealsThatLinesMarkersOnly() async throws {

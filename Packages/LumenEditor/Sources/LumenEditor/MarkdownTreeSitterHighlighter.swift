@@ -103,6 +103,13 @@ public struct MarkdownTreeSitterHighlighter {
             return [.foregroundColor: theme.emphasisColor, .font: theme.boldFont]
         case "emphasis":
             return [.foregroundColor: theme.emphasisColor, .font: theme.italicFont]
+        // GFM strikethrough (`~~x~~`): the grammar tags it `strikethrough`.
+        case "strikethrough":
+            return [
+                .foregroundColor: theme.strikethroughColor,
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                .strikethroughColor: theme.strikethroughColor,
+            ]
 
         // MARK: Inline code
         case "code_span":

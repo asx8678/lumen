@@ -102,6 +102,20 @@ final class MarkdownTreeSitterHighlighterTests: XCTestCase {
             "link URL not styled")
     }
 
+    func testStrikethroughIsStyled() async throws {
+        let text = "Some ~~struck~~ text.\n"
+        let theme = MarkdownHighlightTheme.default
+        let spans = try await styledRanges(for: text, theme: theme)
+        let struck = spans.filter {
+            ($0.attributes[.strikethroughStyle] as? Int)
+                == NSUnderlineStyle.single.rawValue
+        }
+        let ns = text as NSString
+        XCTAssertTrue(
+            struck.map { ns.substring(with: $0.range) }.contains("~~struck~~"),
+            "strikethrough not styled; got \(struck.map { ns.substring(with: $0.range) })")
+    }
+
     func testListMarkerAndBlockquoteAreStyled() async throws {
         let text = "- item one\n- item two\n\n> quoted line\n"
         let theme = MarkdownHighlightTheme.default
