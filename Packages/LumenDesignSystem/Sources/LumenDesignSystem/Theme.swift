@@ -19,10 +19,15 @@ public enum ColorRole: Sendable, CaseIterable {
     case surfaceBackground
     case sidebarBackground
     case editorBackground
+    case activeLineBackground
     case textPrimary
     case textSecondary
     case textPlaceholder
     case separator
+    case separatorHover
+    case hoverWash
+    case activeWash
+    case linkAccent
 
     /// The component of a `Palette` this role maps to.
     func value(in palette: Palette) -> RGBA {
@@ -31,10 +36,15 @@ public enum ColorRole: Sendable, CaseIterable {
         case .surfaceBackground: palette.surfaceBackground
         case .sidebarBackground: palette.sidebarBackground
         case .editorBackground: palette.editorBackground
+        case .activeLineBackground: palette.activeLineBackground
         case .textPrimary: palette.textPrimary
         case .textSecondary: palette.textSecondary
         case .textPlaceholder: palette.textPlaceholder
         case .separator: palette.separator
+        case .separatorHover: palette.separatorHover
+        case .hoverWash: palette.hoverWash
+        case .activeWash: palette.activeWash
+        case .linkAccent: palette.linkAccent
         }
     }
 }
