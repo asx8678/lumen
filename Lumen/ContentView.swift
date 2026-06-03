@@ -441,10 +441,11 @@ private struct SidebarView: View {
     var body: some View {
         let theme = themeManager.theme
         return VStack(alignment: .leading, spacing: 0) {
+            // No hard rule under the header row (Obsidian relies on elevation).
             SidebarHeaderRow()
-            Divider().overlay(theme.color(.separator))
             FileTreeView()
-            Divider().overlay(theme.color(.separator))
+            // Single precise 1px hairline above the bottom vault cluster.
+            theme.color(.separator).frame(height: 1)
             VaultStatusCluster(vault: env.vault.current)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -485,6 +486,9 @@ private struct SidebarHeaderRow: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .foregroundStyle(theme.color(.textSecondary))
+            // borderlessButton menus tint their label with the app accent;
+            // override so the sort glyph stays neutral chrome.
+            .tint(theme.color(.textSecondary))
             .help("Sort")
 
             Spacer()
@@ -557,6 +561,8 @@ private struct VaultStatusCluster: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            // Keep the vault name/chevron muted, not accent-coral.
+            .tint(theme.color(.textSecondary))
             .help("Switch vault")
 
             Spacer()
