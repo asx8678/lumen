@@ -34,6 +34,9 @@ public final class AppEnvironment {
     /// Adjustable, persisted editor typography (P1.13).
     public let editorTypography = EditorTypographyStore()
 
+    /// Per-vault preferences from `.lumen/config.json` (P1.19).
+    public let vaultSettings = VaultSettingsModel()
+
     /// The open editor tabs + active selection (P1.16).
     let tabs: TabManager
 
@@ -63,8 +66,23 @@ public final class AppEnvironment {
         self.theme = ThemeManager()
         self.tabs = TabManager(vault: vault, files: files)
         self.fileTree = FileTreeModel(vault: vault, files: files)
+        wireVaultSettings()
     }
 
+    /// Loads the current vault's `.lumen/config.json` and routes the default
+    /// new-note location into the file tree (P1.19). Call when the vault opens.
+    func reloadVaultSettings() {
+        vaultSettings.load(vaultRoot: vault.current?.root)
+    }
+
+    private func wireVaultSettings() {
+        vaultSettings.load(vaultRoot: vault.current?.root)
+        fileTree.defaultNoteDirectoryProvider = { [weak vaultSettings] in
+            vaultSettings?.defaultNoteDirectory()
+        }
+    }
+
+    /// The FSEvents watcher
     /// Creates the composition root with injected services (for previews/tests).
     public init(
         vault: VaultManager,

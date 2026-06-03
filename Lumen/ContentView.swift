@@ -46,7 +46,10 @@ struct ContentView: View {
             StatusBarView()
         }
         .frame(minWidth: 720, minHeight: 460)
-        .task(id: env.vault.current?.root) { await env.tabs.restore() }
+        .task(id: env.vault.current?.root) {
+            env.reloadVaultSettings()
+            await env.tabs.restore()
+        }
         .task(id: env.vault.current?.root) {
             // Watch the vault and reconcile external edits against open tabs.
             guard let changes = env.startWatching() else { return }

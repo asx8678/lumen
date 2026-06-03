@@ -28,6 +28,10 @@ final class FileTreeModel {
         didSet { items = VaultItem.sorted(rawItems, by: sortOrder) }
     }
 
+    /// Supplies the per-vault default new-note directory used when nothing is
+    /// selected (P1.19). Wired by `AppEnvironment` to `VaultSettingsModel`.
+    @ObservationIgnored var defaultNoteDirectoryProvider: (() -> URL?)?
+
     @ObservationIgnored private var rawItems: [VaultItem] = []
     @ObservationIgnored private let vault: VaultManager
     @ObservationIgnored private let files: FileService
@@ -73,9 +77,17 @@ final class FileTreeModel {
 
     // MARK: - Operations
 
-    /// Creates a new note in the target folder and selects it.
+    /// Creates a new note and selects it. With a sidebar selection it targets
+    /// that folder (or a file's parent); with no selection it uses the
+    /// per-vault default new-note location (P1.19), falling back to the root.
     func newNote() async {
-        guard let dir = targetFolder else { return }
+        let dir: URL?
+        if selectedItem != nil {
+            dir = targetFolder
+        } else {
+            dir = defaultNoteDirectoryProvider?() ?? vault.current?.root
+        }
+        guard let dir else { return }
         await perform { try await self.files.createNote(in: dir) }
     }
 

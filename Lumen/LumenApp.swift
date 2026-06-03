@@ -51,6 +51,7 @@ struct LumenApp: App {
         // ⌘, Settings scene — stub only; full UI is P1.19.
         Settings {
             SettingsView()
+                .environment(env)
                 .environment(env.theme)
                 .tint(env.theme.theme.accentColor)
                 .preferredColorScheme(env.theme.preferredColorScheme)

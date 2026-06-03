@@ -145,11 +145,11 @@ public struct EditorTypography: Sendable, Equatable, Codable {
 
     // MARK: - Helpers
 
-    static func clampSize(_ value: CGFloat) -> CGFloat {
+    public static func clampSize(_ value: CGFloat) -> CGFloat {
         min(maxFontSize, max(minFontSize, value))
     }
 
-    static func clampSpacing(_ value: CGFloat) -> CGFloat {
+    public static func clampSpacing(_ value: CGFloat) -> CGFloat {
         min(maxLineSpacing, max(minLineSpacing, value))
     }
 }
