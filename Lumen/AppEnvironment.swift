@@ -42,6 +42,13 @@ public final class AppEnvironment {
     /// reconciliation here and by the indexing actor (P1.9).
     private(set) var watcher: VaultWatcher?
 
+    /// Observable background-indexing progress (P1.9); rendered by P1.18.
+    let indexingStatus = IndexingStatus()
+
+    /// The background indexing actor for the open vault (P1.9), or `nil`.
+    private(set) var indexer: VaultIndexer?
+    private var indexTask: Task<Void, Never>?
+
     /// Creates the composition root with fresh services. `VaultManager` reopens
     /// the last vault on launch (P1.4).
     public init() {
@@ -71,19 +78,35 @@ public final class AppEnvironment {
     /// one. Returns the new watcher's change stream, or `nil` when no vault is
     /// open. Driven from the root view's `.task(id: vaultRoot)`.
     func startWatching() -> AsyncStream<Set<URL>>? {
-        watcher?.stop()
-        watcher = nil
+        stopWatching()
         guard let root = vault.current?.root else { return nil }
         let newWatcher = VaultWatcher(root: root)
         self.watcher = newWatcher
         let stream = newWatcher.events()
+
+        // Start background indexing off the main thread: full index on open,
+        // then incremental re-index from the watcher's own event stream (P1.9).
+        if let index = try? NotesIndex(vaultRoot: root) {
+            let indexer = VaultIndexer(
+                root: root, files: files, index: index, status: indexingStatus)
+            self.indexer = indexer
+            let indexEvents = newWatcher.events()
+            indexTask = Task.detached(priority: .utility) {
+                await indexer.run(events: indexEvents)
+            }
+        }
+
         newWatcher.start()
         return stream
     }
 
-    /// Stops the watcher (vault close / teardown).
+    /// Stops the watcher + indexer (vault close / teardown).
     func stopWatching() {
+        indexTask?.cancel()
+        indexTask = nil
+        indexer = nil
         watcher?.stop()
         watcher = nil
+        indexingStatus.reset()
     }
 }
