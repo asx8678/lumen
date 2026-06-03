@@ -40,18 +40,50 @@ struct ContentView: View {
 
 // MARK: - Placeholder regions
 
-/// Left sidebar placeholder — will host the vault file tree.
+/// Left sidebar — shows the current vault's name/path (file tree is P1.15).
 private struct SidebarPlaceholder: View {
+    @Environment(VaultManager.self) private var vault
+
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 6) {
+            VaultHeader(vault: vault.current)
+                .padding(12)
+            Divider()
             Spacer()
-            Text("Sidebar")
-                .font(.headline)
-                .foregroundStyle(.secondary)
+            Text("File tree coming soon")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
             Spacer()
         }
-        .navigationTitle("Lumen")
+        .navigationTitle(vault.current?.name ?? "Lumen")
+    }
+}
+
+/// Compact header describing the open vault (or its absence).
+private struct VaultHeader: View {
+    let vault: Vault?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let vault {
+                Label(vault.name, systemImage: "folder")
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(vault.root.path)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Label("No vault open", systemImage: "folder.badge.questionmark")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Text("File ▸ Open Vault… (⇧⌘O)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
     }
 }
 
@@ -74,4 +106,5 @@ private struct StatusBarPlaceholder: View {
 
 #Preview {
     ContentView()
+        .environment(VaultManager(reopenLast: false))
 }

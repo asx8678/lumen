@@ -2,16 +2,25 @@
 //  LumenApp.swift
 //  Lumen
 //
-//  Created by adam on 03/06/2026.
+//  App entry point. Wires the VaultManager into the environment and adds the
+//  vault File-menu commands (P1.4).
 //
 
+import LumenCore
 import SwiftUI
 
 @main
 struct LumenApp: App {
+    /// The app-wide vault state. Reopens the last vault on launch.
+    @State private var vaultManager = VaultManager()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(vaultManager)
+        }
+        .commands {
+            VaultCommands(manager: vaultManager)
         }
     }
 }
