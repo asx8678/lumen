@@ -48,20 +48,29 @@ public actor VaultIndexer {
         await status.begin(total: markdown.count)
 
         var currentPaths = Set<String>()
+        // Accumulate changed records and commit them in a SINGLE transaction at
+        // the end (cold-index fast path) rather than one write per file.
+        var pending: [NoteRecord] = []
         for item in markdown {
             guard let relativePath = TabSupport.relativePath(of: item.url, root: root) else {
                 await status.advance()
                 continue
             }
             currentPaths.insert(relativePath)
-            await indexIfNeeded(
+            if let record = await preparedRecordIfNeeded(
                 url: item.url,
                 relativePath: relativePath,
                 mtime: item.modificationDate?.timeIntervalSince1970 ?? 0,
                 size: Int64(item.size))
+            {
+                pending.append(record)
+            }
             await status.advance()
         }
 
+        if !pending.isEmpty {
+            try? index.upsert(pending)
+        }
         reconcileDeletions(currentPaths: currentPaths)
         await status.finish()
     }
@@ -80,8 +89,11 @@ public actor VaultIndexer {
                 continue
             }
             if let meta = fileMetadata(url) {
-                await indexIfNeeded(
+                if let record = await preparedRecordIfNeeded(
                     url: url, relativePath: relativePath, mtime: meta.mtime, size: meta.size)
+                {
+                    try? index.upsert(record)
+                }
             } else {
                 // File is gone — drop its derived row.
                 _ = try? index.deleteRecord(path: relativePath)
@@ -93,25 +105,28 @@ public actor VaultIndexer {
 
     // MARK: - Core upsert
 
-    /// Indexes one file if it changed versus the stored record.
-    private func indexIfNeeded(url: URL, relativePath: String, mtime: Double, size: Int64) async {
+    /// Builds the index record for one file if it changed versus the stored
+    /// record, WITHOUT writing it. Returns `nil` when the file is unchanged or
+    /// unreadable. Callers decide whether to write singly or batch the result.
+    private func preparedRecordIfNeeded(
+        url: URL, relativePath: String, mtime: Double, size: Int64
+    ) async -> NoteRecord? {
         // Cheap skip: identical size + mtime ⇒ assume unchanged, avoid reading.
         if let existing = try? index.record(forPath: relativePath),
             existing.size == size, existing.mtime == mtime
         {
-            return
+            return nil
         }
-        guard let text = try? await files.read(url) else { return }
+        guard let text = try? await files.read(url) else { return nil }
         let hash = NoteIndexing.contentHash(of: text)
         let needs =
             (try? index.needsReindex(path: relativePath, mtime: mtime, size: size, hash: hash))
             ?? true
-        guard needs else { return }
+        guard needs else { return nil }
 
         let parsed = FrontmatterParser.parse(text)
-        let record = NoteIndexing.makeRecord(
+        return NoteIndexing.makeRecord(
             relativePath: relativePath, text: text, mtime: mtime, size: size, parsed: parsed)
-        try? index.upsert(record)
     }
 
     /// Removes index rows whose files no longer exist in the enumeration.

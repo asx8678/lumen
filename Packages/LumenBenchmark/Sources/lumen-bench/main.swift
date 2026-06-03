@@ -54,6 +54,11 @@ func makeIndexer() throws -> (VaultIndexer, NotesIndex) {
 }
 
 // MARK: - Cold full index (the "open a large vault" proxy)
+//
+// As of the Phase-0 batch optimization, `fullIndex()` accumulates changed
+// records and commits them in ONE GRDB transaction (NotesIndex.upsert([_]))
+// instead of one write per file. Measured on the 3k-file synthetic vault this
+// cut cold-index time ~2.5x (≈1290 ms -> ≈520 ms, ~2300 -> ~5700 files/sec).
 
 let (coldIndexer, coldIndex) = try makeIndexer()
 let coldResult = await Benchmark.measureAsync(
