@@ -7,9 +7,16 @@ let package = Package(
     products: [
         .library(name: "LumenCore", targets: ["LumenCore"])
     ],
+    dependencies: [
+        // YAML frontmatter parsing (P1.7).
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0")
+    ],
     targets: [
         .target(
             name: "LumenCore",
+            dependencies: [
+                .product(name: "Yams", package: "Yams")
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
