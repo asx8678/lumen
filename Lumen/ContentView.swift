@@ -174,11 +174,12 @@ private struct ActiveEditor: View {
     var body: some View {
         let typography = env.editorTypography.typography
         switch document.viewMode {
-        case .edit:
+        case .source, .livePreview:
             TextKit2EditorView(
                 text: $document.text,
                 highlightTheme: MarkdownHighlightTheme(theme: theme, typography: typography),
                 typography: typography,
+                enableLivePreview: document.viewMode == .livePreview,
                 onBlur: { Task { await env.tabs.flush() } }
             )
             .onChange(of: document.text) { _, _ in
@@ -278,16 +279,21 @@ private struct TabStripView: View {
     }
 }
 
-/// A compact segmented control mirroring the ⌘E toggle: switches the active
-/// tab between edit and reading mode (P2.1.1).
+/// A compact 3-way segmented control: switches the active tab between Source,
+/// Live Preview, and Reading modes (P2.2.1g). Mirrors the View-menu commands.
 private struct ViewModePicker: View {
     @Environment(AppEnvironment.self) private var env
 
     var body: some View {
         Picker("View Mode", selection: modeBinding) {
-            Image(systemName: "pencil").tag(EditorViewMode.edit)
-                .help("Edit")
-            Image(systemName: "book").tag(EditorViewMode.reading)
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .tag(EditorViewMode.source)
+                .help("Source")
+            Image(systemName: "eye")
+                .tag(EditorViewMode.livePreview)
+                .help("Live Preview")
+            Image(systemName: "book")
+                .tag(EditorViewMode.reading)
                 .help("Reading view (⌘E)")
         }
         .pickerStyle(.segmented)
@@ -297,11 +303,8 @@ private struct ViewModePicker: View {
 
     private var modeBinding: Binding<EditorViewMode> {
         Binding(
-            get: { env.tabs.active?.viewMode ?? .edit },
-            set: { newValue in
-                guard let active = env.tabs.active, active.viewMode != newValue else { return }
-                env.tabs.toggleActiveViewMode()
-            })
+            get: { env.tabs.active?.viewMode ?? .source },
+            set: { newValue in env.tabs.setActiveViewMode(newValue) })
     }
 }
 

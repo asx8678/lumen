@@ -16,9 +16,10 @@ public struct TabsSnapshot: Codable, Equatable, Sendable {
     public var relativePaths: [String]
     /// The active tab's index into `relativePaths`.
     public var activeIndex: Int
-    /// Per-tab presentation modes (P2.1.1), parallel to `relativePaths`. May be
-    /// shorter (or empty) than `relativePaths` — missing entries default to
-    /// `.edit`, so legacy snapshots decode cleanly.
+    /// Per-tab presentation modes (P2.1.1 → P2.2.1g), parallel to
+    /// `relativePaths`. May be shorter (or empty) than `relativePaths` —
+    /// missing entries default to `.source`, so legacy snapshots decode
+    /// cleanly (and the legacy `"edit"` raw value maps to `.source`).
     public var viewModes: [EditorViewMode]
 
     public init(
@@ -40,9 +41,9 @@ public struct TabsSnapshot: Codable, Equatable, Sendable {
             try c.decodeIfPresent([EditorViewMode].self, forKey: .viewModes) ?? []
     }
 
-    /// The persisted mode for `index`, defaulting to `.edit`.
+    /// The persisted mode for `index`, defaulting to `.source`.
     public func viewMode(at index: Int) -> EditorViewMode {
-        viewModes.indices.contains(index) ? viewModes[index] : .edit
+        viewModes.indices.contains(index) ? viewModes[index] : .source
     }
 
     /// An empty snapshot (no open tabs).

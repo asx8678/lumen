@@ -17,13 +17,23 @@ struct ReadingCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .sidebar) {
-            Button(toggleLabel) { env.tabs.toggleActiveViewMode() }
+            Button(readingLabel) { env.tabs.toggleActiveReadingView() }
                 .keyboardShortcut("e", modifiers: [.command])
+                .disabled(env.tabs.active == nil)
+
+            Button(livePreviewLabel) { env.tabs.toggleActiveEditingMode() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(env.tabs.active == nil)
         }
     }
 
-    private var toggleLabel: String {
+    private var readingLabel: String {
         env.tabs.active?.viewMode == .reading ? "Show Editor" : "Toggle Reading View"
+    }
+
+    /// Reflects which editing mode ⇧⌘E will switch *to* (Source ⇄ Live Preview).
+    private var livePreviewLabel: String {
+        env.tabs.active?.viewMode == .livePreview
+            ? "Switch to Source" : "Switch to Live Preview"
     }
 }

@@ -35,6 +35,10 @@ final class TabManager {
         }
     }
 
+    /// Supplies the editing mode (`source`/`livePreview`) new tabs open in,
+    /// from the app-global default (P2.2.1g). Defaults to `.source`.
+    @ObservationIgnored var defaultEditingMode: () -> EditorViewMode = { .source }
+
     @ObservationIgnored private let files: FileService
     @ObservationIgnored private let vault: VaultManager
     @ObservationIgnored private let store: TabStore
@@ -104,6 +108,7 @@ final class TabManager {
             logger.error("Open failed: \(String(describing: error), privacy: .public)")
             return
         }
+        session.setViewMode(defaultEditingMode())
         tabs.append(session)
         activeID = session.id  // triggers persist
     }
@@ -145,11 +150,27 @@ final class TabManager {
 
     // MARK: - Save
 
-    /// Toggles the active tab's presentation mode (edit ⇄ reading) and persists
-    /// it (P2.1.1). No-op when no tab is open.
-    func toggleActiveViewMode() {
+    /// Toggles the active tab between an editing mode and the reading view
+    /// (the ⌘E toggle) and persists it (P2.1.1). No-op when no tab is open.
+    func toggleActiveReadingView() {
         guard let active else { return }
-        active.toggleViewMode()
+        active.toggleReadingView()
+        persist()
+    }
+
+    /// Switches the active tab between Source and Live Preview editing modes
+    /// and persists it (P2.2.1g). No-op when no tab is open.
+    func toggleActiveEditingMode() {
+        guard let active else { return }
+        active.toggleEditingMode()
+        persist()
+    }
+
+    /// Sets the active tab's presentation mode directly (the 3-way picker)
+    /// and persists it (P2.2.1g). No-op when no tab is open.
+    func setActiveViewMode(_ mode: EditorViewMode) {
+        guard let active, active.viewMode != mode else { return }
+        active.setViewMode(mode)
         persist()
     }
 
@@ -197,7 +218,7 @@ final class TabManager {
             do {
                 try await session.open(url)
                 if resolved.modes.indices.contains(offset) {
-                    session.viewMode = resolved.modes[offset]
+                    session.setViewMode(resolved.modes[offset])
                 }
                 tabs.append(session)
             } catch {

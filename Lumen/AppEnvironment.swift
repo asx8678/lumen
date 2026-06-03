@@ -34,6 +34,10 @@ public final class AppEnvironment {
     /// Adjustable, persisted editor typography (P1.13).
     public let editorTypography = EditorTypographyStore()
 
+    /// App-global default editing mode (Source / Live Preview) for new tabs
+    /// (P2.2.1g).
+    public let editorMode = EditorModePreferences()
+
     /// Per-vault preferences from `.lumen/config.json` (P1.19).
     public let vaultSettings = VaultSettingsModel()
 
@@ -67,6 +71,7 @@ public final class AppEnvironment {
         self.tabs = TabManager(vault: vault, files: files)
         self.fileTree = FileTreeModel(vault: vault, files: files)
         wireVaultSettings()
+        wireEditorMode()
     }
 
     /// Loads the current vault's `.lumen/config.json` and routes the default
@@ -94,6 +99,15 @@ public final class AppEnvironment {
         self.theme = theme ?? ThemeManager()
         self.tabs = TabManager(vault: vault, files: files)
         self.fileTree = FileTreeModel(vault: vault, files: files)
+        wireEditorMode()
+    }
+
+    /// Routes the app-global default editing mode into the tab manager so new
+    /// tabs open in the user's preferred editing mode (P2.2.1g).
+    private func wireEditorMode() {
+        tabs.defaultEditingMode = { [weak self] in
+            self?.editorMode.defaultEditingMode ?? .source
+        }
     }
 
     /// (Re)starts the FSEvents watcher for the current vault, stopping any prior

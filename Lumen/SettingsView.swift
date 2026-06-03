@@ -63,7 +63,22 @@ private struct EditorSettings: View {
     var body: some View {
         let store = env.editorTypography
         let t = store.typography
+        let mode = env.editorMode
         Form {
+            Picker(
+                "Default editing mode",
+                selection: Binding(
+                    get: { mode.defaultEditingMode },
+                    set: { mode.defaultEditingMode = $0 })
+            ) {
+                Text("Source").tag(EditorViewMode.source)
+                Text("Live Preview").tag(EditorViewMode.livePreview)
+            }
+            .pickerStyle(.segmented)
+            Text("The mode new tabs open in.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Picker(
                 "Font",
                 selection: Binding(

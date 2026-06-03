@@ -12,6 +12,16 @@
 		AA00000000000000000000E3 /* LumenDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000D3 /* LumenDesignSystem */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000F08 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A794E2E32FCFDD7300FCACD3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A794E2EA2FCFDD7300FCACD3;
+			remoteInfo = Lumen;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		A794E2EB2FCFDD7300FCACD3 /* Lumen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lumen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000F01 /* LumenUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LumenUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -29,16 +39,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXContainerItemProxy section */
-		AA0000000000000000000F08 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A794E2E32FCFDD7300FCACD3 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A794E2EA2FCFDD7300FCACD3;
-			remoteInfo = Lumen;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A794E2E82FCFDD7300FCACD3 /* Frameworks */ = {
@@ -132,14 +132,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXTargetDependency section */
-		AA0000000000000000000F07 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A794E2EA2FCFDD7300FCACD3 /* Lumen */;
-			targetProxy = AA0000000000000000000F08 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		A794E2E32FCFDD7300FCACD3 /* Project object */ = {
 			isa = PBXProject;
@@ -215,6 +207,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000F07 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A794E2EA2FCFDD7300FCACD3 /* Lumen */;
+			targetProxy = AA0000000000000000000F08 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A794E2F42FCFDD7300FCACD3 /* Debug */ = {
