@@ -41,6 +41,9 @@ public struct MarkdownHighlightTheme {
     public var strikethroughColor: NSColor
     /// Background color for highlighted text (`==x==`, Obsidian-style).
     public var highlightBackgroundColor: NSColor
+    /// Background fill for the live-preview fenced/indented code box (a
+    /// design-system surface color).
+    public var codeBlockBackgroundColor: NSColor
 
     /// Paragraph style applied as the body baseline (line spacing, P1.13). The
     /// highlighter includes it in the reset so typography composes with colors.
@@ -59,8 +62,10 @@ public struct MarkdownHighlightTheme {
         emphasisColor: NSColor = .labelColor,
         strikethroughColor: NSColor = .secondaryLabelColor,
         highlightBackgroundColor: NSColor = .systemYellow.withAlphaComponent(0.35),
+        codeBlockBackgroundColor: NSColor = .quaternaryLabelColor,
         paragraphStyle: NSParagraphStyle = .default
     ) {
+        self.codeBlockBackgroundColor = codeBlockBackgroundColor
         self.baseFont = baseFont
         self.paragraphStyle = paragraphStyle
         self.bodyColor = bodyColor

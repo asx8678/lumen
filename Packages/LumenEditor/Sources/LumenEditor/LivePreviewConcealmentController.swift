@@ -45,6 +45,35 @@ public final class LivePreviewConcealmentController: NSObject,
     /// caller can invalidate only those (viewport-only + active-line diff).
     private(set) var concealedRanges: [NSRange] = []
 
+    /// A display-string substitution: replace a backing range with a string
+    /// without mutating the store. Used for persistent list bullets (`- ` →
+    /// `• `), which — unlike concealed markers — stay substituted even on the
+    /// active line (per the spec).
+    struct Substitution: Equatable {
+        let range: NSRange
+        let replacement: String
+    }
+
+    /// Current bullet substitutions (document coordinates).
+    private(set) var substitutions: [Substitution] = []
+
+    /// Per-paragraph indentation to apply to the display string for list items
+    /// and blockquotes (head indent + hang indent). Keyed by a backing range
+    /// that falls inside the target paragraph; the whole display paragraph
+    /// receives the style. Stored as raw values so the controller stays
+    /// font-agnostic — the coordinator builds the `NSParagraphStyle`.
+    private(set) var paragraphIndents: [ParagraphIndent] = []
+
+    /// An indentation directive for one paragraph.
+    struct ParagraphIndent: Equatable {
+        /// A backing offset inside the target paragraph.
+        let anchor: Int
+        /// Indent of the first display line (points).
+        let firstLineHeadIndent: CGFloat
+        /// Indent of wrapped continuation lines (points) — the hang indent.
+        let headIndent: CGFloat
+    }
+
     /// Replaces the concealed-range set and returns `true` if it changed.
     ///
     /// - Parameter ranges: The new concealed marker ranges (already restricted
@@ -61,9 +90,34 @@ public final class LivePreviewConcealmentController: NSObject,
         return true
     }
 
+    /// Replaces the bullet-substitution set and returns `true` if it changed.
+    @discardableResult
+    func update(substitutions next: [Substitution]) -> Bool {
+        let sorted = next.sorted { $0.range.location < $1.range.location }
+        guard sorted != substitutions else { return false }
+        substitutions = sorted
+        return true
+    }
+
+    /// Replaces the paragraph-indent set and returns `true` if it changed.
+    @discardableResult
+    func update(paragraphIndents next: [ParagraphIndent]) -> Bool {
+        let sorted = next.sorted { $0.anchor < $1.anchor }
+        guard sorted != paragraphIndents else { return false }
+        paragraphIndents = sorted
+        return true
+    }
+
+    /// Whether the delegate currently has anything to substitute on display.
+    var hasDisplaySubstitutions: Bool {
+        !concealedRanges.isEmpty || !substitutions.isEmpty || !paragraphIndents.isEmpty
+    }
+
     /// Clears all concealment (used when the feature flag is turned off).
     public func reset() {
         concealedRanges = []
+        substitutions = []
+        paragraphIndents = []
     }
 
     // MARK: - NSTextContentStorageDelegate
@@ -72,27 +126,68 @@ public final class LivePreviewConcealmentController: NSObject,
         _ textContentStorage: NSTextContentStorage,
         textParagraphWith range: NSRange
     ) -> NSTextParagraph? {
-        guard isEnabled, !concealedRanges.isEmpty,
+        guard isEnabled, hasDisplaySubstitutions,
             let backing = textContentStorage.textStorage
         else { return nil }
 
-        // Collect concealed ranges that fall in this paragraph, mapped to
-        // paragraph-local coordinates, sorted high→low so deletions don't
-        // shift not-yet-processed offsets.
-        var local: [NSRange] = []
+        // Build a single ordered edit list (deletions for concealed markers,
+        // string replacements for bullets), mapped to paragraph-local
+        // coordinates and sorted high→low so earlier edits don't shift the
+        // offsets of not-yet-applied ones.
+        struct Edit {
+            let range: NSRange
+            let replacement: String?  // nil = delete
+        }
+        var edits: [Edit] = []
         for concealed in concealedRanges {
             let hit = NSIntersectionRange(concealed, range)
             guard hit.length > 0 else { continue }
-            local.append(
-                NSRange(location: hit.location - range.location, length: hit.length))
+            edits.append(
+                Edit(
+                    range: NSRange(
+                        location: hit.location - range.location, length: hit.length),
+                    replacement: nil))
         }
-        guard !local.isEmpty else { return nil }
-        local.sort { $0.location > $1.location }
+        for substitution in substitutions {
+            let hit = NSIntersectionRange(substitution.range, range)
+            guard hit.length > 0 else { continue }
+            edits.append(
+                Edit(
+                    range: NSRange(
+                        location: hit.location - range.location, length: hit.length),
+                    replacement: substitution.replacement))
+        }
+
+        // Indentation that targets this paragraph (anchor inside the range).
+        let indent = paragraphIndents.first { range.contains($0.anchor) }
+
+        guard !edits.isEmpty || indent != nil else { return nil }
+        edits.sort { $0.range.location > $1.range.location }
 
         let display = NSMutableAttributedString(
             attributedString: backing.attributedSubstring(from: range))
-        for marker in local where NSMaxRange(marker) <= display.length {
-            display.deleteCharacters(in: marker)
+        for edit in edits where NSMaxRange(edit.range) <= display.length {
+            if let replacement = edit.replacement {
+                let attrs = display.attributes(
+                    at: edit.range.location, effectiveRange: nil)
+                display.replaceCharacters(
+                    in: edit.range,
+                    with: NSAttributedString(string: replacement, attributes: attrs))
+            } else {
+                display.deleteCharacters(in: edit.range)
+            }
+        }
+
+        if let indent, display.length > 0 {
+            let whole = NSRange(location: 0, length: display.length)
+            let base =
+                (display.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
+                    as? NSParagraphStyle ?? .default)
+            // swiftlint:disable:next force_cast
+            let style = base.mutableCopy() as! NSMutableParagraphStyle
+            style.firstLineHeadIndent = indent.firstLineHeadIndent
+            style.headIndent = indent.headIndent
+            display.addAttribute(.paragraphStyle, value: style, range: whole)
         }
         return NSTextParagraph(attributedString: display)
     }

@@ -86,6 +86,12 @@ public struct TextKit2EditorView: NSViewRepresentable {
         // so the default editor path is unaffected.
         context.coordinator.livePreviewController.isEnabled = enableLivePreview
         textView.textContentStorage?.delegate = context.coordinator.livePreviewController
+        // P2.2.1c block-level chrome: install the layout-manager delegate that
+        // draws blockquote bars + the fenced-code box. Inert unless enabled.
+        context.coordinator.blockChromeProvider.isEnabled = enableLivePreview
+        if enableLivePreview {
+            textView.textLayoutManager?.delegate = context.coordinator.blockChromeProvider
+        }
         // P1.21 UI test hook: lets XCUITest locate the editor text area.
         textView.setAccessibilityIdentifier("editor-textview")
         textView.isEditable = true
@@ -182,6 +188,9 @@ public struct TextKit2EditorView: NSViewRepresentable {
         /// Owns the conceal/reveal display substitution (content-storage
         /// delegate). Inert while `enableLivePreview` is `false`.
         let livePreviewController = LivePreviewConcealmentController()
+        /// Draws block-level chrome (blockquote bars, fenced-code box) via the
+        /// TextKit 2 layout-manager delegate. Inert while the flag is off.
+        let blockChromeProvider = LivePreviewBlockChromeProvider()
         nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
         nonisolated(unsafe) private var frameObserver: NSObjectProtocol?
 
@@ -454,8 +463,13 @@ public struct TextKit2EditorView: NSViewRepresentable {
             guard scan.length > 0 else { return }
             let selections = textView.selectedRanges.map(\.rangeValue)
             let controller = livePreviewController
+            let chromeProvider = blockChromeProvider
             let pending = parseTask
             let highlightColor = theme.highlightBackgroundColor
+            let unit = theme.baseFont.pointSize * 1.4
+            let barColor = theme.quoteColor
+            let codeBoxColor = theme.codeBlockBackgroundColor
+            let containerWidth = textView.textContainer?.size.width ?? 0
             Task { @MainActor [weak textView] in
                 await pending?.value
                 let nodes = await parser.nodes(in: scan)
@@ -466,22 +480,115 @@ public struct TextKit2EditorView: NSViewRepresentable {
                 let clamp = NSIntersectionRange(
                     scan, NSRange(location: 0, length: current.length))
                 guard clamp.length > 0 else { return }
-                let (concealed, _) = LivePreviewDecorations.resolve(
+                // Inline (S-class) markers + blockquote `> ` markers both obey
+                // the per-line reveal rule; merge them into one concealed set.
+                let (inlineConcealed, _) = LivePreviewDecorations.resolve(
                     in: current, selections: selections, nodes: nodes)
+                let quoteMarkers = LivePreviewBlockDecorations.blockquoteMarkerRanges(
+                    from: nodes, in: current)
+                let (quoteConcealed, _) = LivePreviewDecorations.partition(
+                    markers: quoteMarkers, in: current, selections: selections)
+                let concealed = inlineConcealed + quoteConcealed
+
+                // Bullets persist even on the active line (not reveal-gated).
+                let bullets = LivePreviewBlockDecorations.bulletSubstitutions(from: nodes)
+                let substitutions = bullets.map {
+                    LivePreviewConcealmentController.Substitution(
+                        range: $0.range,
+                        replacement: $0.replacement)
+                }
+                let indents = Self.paragraphIndents(
+                    nodes: nodes, text: current, unit: unit)
+
+                // Region model for the chrome layer (bars + code box).
+                let quoteRegions = LivePreviewBlockDecorations.blockquoteRegions(from: nodes)
+                let codeRegions = LivePreviewBlockDecorations.codeBlockRegions(from: nodes)
+                chromeProvider.indentUnit = unit
+                chromeProvider.barColor = barColor
+                chromeProvider.codeBoxColor = codeBoxColor
+                chromeProvider.containerWidth = containerWidth
+
                 // Paint highlight (`==x==`) backgrounds in the viewport. The
                 // grammar has no `==` node, so this is the live-preview-only
                 // styling path; the content stays highlighted whether or not
                 // the line is active (only the `==` markers toggle).
                 Self.applyHighlightBackground(
                     in: storage, scan: clamp, color: highlightColor, text: current)
-                guard controller.update(concealed: concealed) else { return }
+
+                // Evaluate every update (no short-circuit) so each set is
+                // applied even when an earlier one already changed.
+                let concealChanged = controller.update(concealed: concealed)
+                let subsChanged = controller.update(substitutions: substitutions)
+                let indentChanged = controller.update(paragraphIndents: indents)
+                let chromeChanged = chromeProvider.update(
+                    blockquotes: quoteRegions, codeBlocks: codeRegions)
+                let displayChanged = concealChanged || subsChanged || indentChanged
+                guard displayChanged || chromeChanged else { return }
                 // Mark the viewport's attributes dirty (NOT characters) so the
-                // content storage re-queries the concealing delegate without
-                // triggering a tree-sitter reparse.
+                // content storage re-queries the concealing delegate and the
+                // layout manager rebuilds chrome fragments, without triggering
+                // a tree-sitter reparse.
                 storage.beginEditing()
                 storage.edited(.editedAttributes, range: clamp, changeInLength: 0)
                 storage.endEditing()
             }
+        }
+
+        /// Builds per-paragraph indentation for list items and blockquote
+        /// lines from the parsed nodes. List items hang-indent continuation
+        /// lines under the marker; blockquote lines indent by their nesting
+        /// depth to leave a gutter for the accent bars. Geometry stays correct
+        /// under concealment because the indents are paragraph-style attributes
+        /// on the same shortened display string TextKit 2 lays out.
+        private static func paragraphIndents(
+            nodes: [MarkdownSyntaxNode],
+            text: NSString,
+            unit: CGFloat
+        ) -> [LivePreviewConcealmentController.ParagraphIndent] {
+            var indents: [LivePreviewConcealmentController.ParagraphIndent] = []
+
+            // List items (bullet + ordered): first line at (depth-1)*unit, and
+            // wrapped lines hang one further unit in, aligning under the text.
+            let listMarkerTypes: Set<String> = [
+                "list_marker_minus", "list_marker_star", "list_marker_plus",
+                "list_marker_dot",
+            ]
+            for node in nodes where listMarkerTypes.contains(node.type) {
+                let depth = LivePreviewBlockDecorations.listDepth(
+                    at: node.range.location, from: nodes)
+                let level = CGFloat(max(0, depth - 1))
+                indents.append(
+                    .init(
+                        anchor: node.range.location,
+                        firstLineHeadIndent: level * unit,
+                        headIndent: (level + 1) * unit))
+            }
+
+            // Blockquote lines: indent every line of the region by its depth so
+            // the bars sit in the gutter; no hang (first == continuation).
+            let regions = LivePreviewBlockDecorations.blockquoteRegions(from: nodes)
+            for region in regions {
+                var lineStart = region.range.location
+                let end = NSMaxRange(region.range)
+                while lineStart < end {
+                    let line = text.lineRange(
+                        for: NSRange(location: lineStart, length: 0))
+                    let depth = LivePreviewBlockDecorations.blockquoteDepth(
+                        at: lineStart, regions: regions)
+                    if depth > 0 {
+                        let inset = CGFloat(depth) * unit
+                        indents.append(
+                            .init(
+                                anchor: lineStart,
+                                firstLineHeadIndent: inset,
+                                headIndent: inset))
+                    }
+                    let next = NSMaxRange(line)
+                    if next <= lineStart { break }
+                    lineStart = next
+                }
+            }
+            return indents
         }
 
         /// Overlays the highlight background on every `==x==` content run that

@@ -248,6 +248,19 @@ public enum LivePreviewDecorations {
         nodes: [MarkdownSyntaxNode]
     ) -> (concealed: [NSRange], revealed: [NSRange]) {
         let markers = markerRanges(from: nodes, in: text)
+        return partition(markers: markers, in: text, selections: selections)
+    }
+
+    /// Partitions an ARBITRARY set of marker ranges into concealed vs revealed
+    /// using the same per-logical-line reveal rule as `resolve`. Lets
+    /// block-level decorations (e.g. blockquote `> ` markers from
+    /// `LivePreviewBlockDecorations`) share the inline reveal mechanism: a
+    /// caret anywhere on a line reveals every marker on that line.
+    public static func partition(
+        markers: [NSRange],
+        in text: NSString,
+        selections: [NSRange]
+    ) -> (concealed: [NSRange], revealed: [NSRange]) {
         let activeLines = activeLineRanges(in: text, selections: selections)
 
         var concealed: [NSRange] = []

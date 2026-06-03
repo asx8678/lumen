@@ -36,6 +36,7 @@ extension MarkdownHighlightTheme {
             listMarkerColor: palette.mdListMarker.nsColor,
             quoteColor: palette.mdQuote.nsColor,
             emphasisColor: palette.mdEmphasis.nsColor,
+            codeBlockBackgroundColor: palette.surfaceBackground.nsColor,
             paragraphStyle: paragraphStyle
         )
     }
