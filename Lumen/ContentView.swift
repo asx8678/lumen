@@ -2,20 +2,88 @@
 //  ContentView.swift
 //  Lumen
 //
-//  Created by adam on 03/06/2026.
+//  Root shell: collapsible left sidebar · center editor area · slim bottom
+//  status bar. P1.1 placeholder only — no real functionality yet.
 //
 
 import SwiftUI
+import LumenCore
+import LumenDesignSystem
+import LumenEditor
 
+/// The top-level three-region application shell.
+///
+/// Layout:
+/// - A collapsible left sidebar (file tree placeholder).
+/// - A center editor area (TextKit 2 host placeholder).
+/// - A slim bottom status bar.
 struct ContentView: View {
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+
+    var body: some View {
+        VStack(spacing: 0) {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                SidebarPlaceholder()
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 240, max: 360)
+            } detail: {
+                EditorPlaceholder()
+            }
+
+            Divider()
+            StatusBarPlaceholder()
+        }
+        .frame(minWidth: 640, minHeight: 400)
+    }
+}
+
+// MARK: - Placeholder regions
+
+/// Left sidebar placeholder — will host the vault file tree.
+private struct SidebarPlaceholder: View {
+    var body: some View {
+        VStack(alignment: .leading) {
+            Spacer()
+            Text("Sidebar")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+            Spacer()
+        }
+        .navigationTitle("Lumen")
+    }
+}
+
+/// Center editor placeholder — will host the TextKit 2 editor.
+private struct EditorPlaceholder: View {
     var body: some View {
         VStack {
-            Image(systemName: "globe")
+            Spacer()
+            Image(systemName: "doc.text")
                 .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("No document open")
+                .foregroundStyle(.secondary)
+            Spacer()
         }
-        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Slim bottom status bar placeholder.
+private struct StatusBarPlaceholder: View {
+    var body: some View {
+        HStack {
+            Text("Ready")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("LumenCore \(LumenCore.version)")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 24)
     }
 }
 
