@@ -68,6 +68,21 @@ public struct TabStore {
         defaults.set(data, forKey: key(for: vaultRoot))
     }
 
+    /// Removes the persisted snapshot for a single vault.
+    public func clear(vaultRoot: URL) {
+        defaults.removeObject(forKey: key(for: vaultRoot))
+    }
+
+    /// Removes EVERY persisted tab snapshot, regardless of vault. Used to give
+    /// `LUMEN_RESET_STATE=1` a genuine clean slate (otherwise stale per-vault
+    /// snapshots survive a "reset" and get restored on the next launch).
+    public func clearAll() {
+        for storedKey in defaults.dictionaryRepresentation().keys
+        where storedKey.hasPrefix(Self.prefix) {
+            defaults.removeObject(forKey: storedKey)
+        }
+    }
+
     /// Loads the snapshot for the given vault (empty if none/corrupt).
     public func load(vaultRoot: URL) -> TabsSnapshot {
         guard let data = defaults.data(forKey: key(for: vaultRoot)),

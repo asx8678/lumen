@@ -87,6 +87,10 @@ public final class VaultManager {
         let environment = ProcessInfo.processInfo.environment
         if environment["LUMEN_RESET_STATE"] == "1" {
             defaults.removeObject(forKey: Self.recentsKey)
+            // A genuine clean slate also drops every persisted tab snapshot;
+            // otherwise a stale per-vault snapshot survives the "reset" and is
+            // restored on the next launch (defeating the clean-slate contract).
+            TabStore(defaults: defaults).clearAll()
         }
         self.recents = Self.loadRecents(from: defaults)
 

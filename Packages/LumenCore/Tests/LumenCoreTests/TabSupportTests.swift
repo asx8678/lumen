@@ -68,6 +68,35 @@ final class TabSupportTests: XCTestCase {
         XCTAssertEqual(store.load(vaultRoot: root), snapshot)
     }
 
+    func testClearRemovesSingleVaultSnapshot() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TabStore(defaults: defaults)
+        store.save(TabsSnapshot(relativePaths: ["a.md"], activeIndex: 0), vaultRoot: root)
+        store.clear(vaultRoot: root)
+        XCTAssertEqual(store.load(vaultRoot: root), .empty)
+    }
+
+    func testClearAllRemovesEveryVaultSnapshot() {
+        // Regression for lumen-cle: a "reset"/clean-slate launch must not leave
+        // stale per-vault tab snapshots behind for a later restore to pick up.
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TabStore(defaults: defaults)
+        let rootA = URL(fileURLWithPath: "/VaultA")
+        let rootB = URL(fileURLWithPath: "/VaultB")
+        store.save(TabsSnapshot(relativePaths: ["a.md"], activeIndex: 0), vaultRoot: rootA)
+        store.save(TabsSnapshot(relativePaths: ["b.md"], activeIndex: 0), vaultRoot: rootB)
+        // An unrelated key must survive the targeted clear.
+        defaults.set("keep", forKey: "LumenUnrelated.key")
+
+        store.clearAll()
+
+        XCTAssertEqual(store.load(vaultRoot: rootA), .empty)
+        XCTAssertEqual(store.load(vaultRoot: rootB), .empty)
+        XCTAssertEqual(defaults.string(forKey: "LumenUnrelated.key"), "keep")
+    }
+
     func testLoadMissingReturnsEmpty() {
         let (defaults, suite) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

@@ -16,6 +16,10 @@ import SwiftUI
 
 @main
 struct LumenApp: App {
+    /// AppKit delegate that keeps the single-window app alive across the
+    /// window-less gap during relaunch state restoration (lumen-cle).
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     /// The composition root: built once, injected everywhere. Reopens the last
     /// vault on launch via `VaultManager` (P1.4).
     @State private var env = AppEnvironment()
