@@ -40,13 +40,18 @@ enum LivePreviewWidgetRendering {
     ///   - ruleColor: Color of the horizontal-rule glyph.
     ///   - placeholderColor: Color for the image placeholder label.
     ///   - width: Container width, so a rule spans the readable column.
+    ///   - image: The loaded image pixels for an `.image` widget, when
+    ///     available; `nil` falls back to the link-styled placeholder.
+    ///   - maxImageWidth: The maximum display width for a rendered image.
     static func attributedString(
         for widget: LivePreviewWidgetDecorations.Widget,
         font: NSFont,
         linkColor: NSColor,
         ruleColor: NSColor,
         placeholderColor: NSColor,
-        width: CGFloat
+        width: CGFloat,
+        image: NSImage? = nil,
+        maxImageWidth: CGFloat = 480
     ) -> NSAttributedString {
         switch widget.kind {
         case .link(let url):
@@ -57,6 +62,9 @@ enum LivePreviewWidgetRendering {
             return linkString(
                 label: widget.displayLabel, destination: destination, font: font, color: linkColor)
         case .image:
+            if let image {
+                return imageString(image, maxWidth: min(maxImageWidth, max(width - 8, 32)))
+            }
             return placeholderString(
                 label: widget.displayLabel.isEmpty ? "image" : widget.displayLabel,
                 font: font, color: placeholderColor)
@@ -94,6 +102,22 @@ enum LivePreviewWidgetRendering {
         return NSAttributedString(
             string: "\u{1F5BC} \(label)",
             attributes: [.font: italic, .foregroundColor: color])
+    }
+
+    /// An inline image attachment, scaled to fit `maxWidth` while preserving
+    /// aspect ratio (never upscaled past the source's natural size).
+    private static func imageString(_ image: NSImage, maxWidth: CGFloat) -> NSAttributedString {
+        let natural = image.size
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        if natural.width > 0, natural.height > 0 {
+            let scale = min(1, maxWidth / natural.width)
+            attachment.bounds = NSRect(
+                x: 0, y: 0,
+                width: natural.width * scale,
+                height: natural.height * scale)
+        }
+        return NSAttributedString(attachment: attachment)
     }
 
     private static func ruleString(

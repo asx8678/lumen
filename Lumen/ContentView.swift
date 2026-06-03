@@ -180,6 +180,8 @@ private struct ActiveEditor: View {
                 highlightTheme: MarkdownHighlightTheme(theme: theme, typography: typography),
                 typography: typography,
                 enableLivePreview: document.viewMode == .livePreview,
+                noteBaseURL: document.url?.deletingLastPathComponent(),
+                onOpenWikilink: { target in env.openWikilink(target) },
                 onBlur: { Task { await env.tabs.flush() } }
             )
             .onChange(of: document.text) { _, _ in

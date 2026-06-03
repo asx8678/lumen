@@ -60,6 +60,10 @@ public final class AppEnvironment {
     private(set) var indexer: VaultIndexer?
     private var indexTask: Task<Void, Never>?
 
+    /// The open vault's note index, used to resolve wikilink clicks to notes
+    /// (lumen-gia). `nil` until a vault is opened.
+    private(set) var notesIndex: NotesIndex?
+
     /// Creates the composition root with fresh services. `VaultManager` reopens
     /// the last vault on launch (P1.4).
     public init() {
@@ -123,6 +127,7 @@ public final class AppEnvironment {
         // Start background indexing off the main thread: full index on open,
         // then incremental re-index from the watcher's own event stream (P1.9).
         if let index = try? NotesIndex(vaultRoot: root) {
+            self.notesIndex = index
             let indexer = VaultIndexer(
                 root: root, files: files, index: index, status: indexingStatus)
             self.indexer = indexer
@@ -143,6 +148,21 @@ public final class AppEnvironment {
         indexer = nil
         watcher?.stop()
         watcher = nil
+        notesIndex = nil
         indexingStatus.reset()
+    }
+
+    /// Resolves a clicked wikilink target (the raw inner text of a `[[…]]`)
+    /// against the vault index and opens the matching note in a tab
+    /// (lumen-gia). No-op — no error sound — when there is no vault, no index,
+    /// or no matching note (create-on-click is a deferred follow-up).
+    func openWikilink(_ target: String) {
+        guard let root = vault.current?.root,
+            let index = notesIndex,
+            let paths = try? index.allPaths(),
+            let relative = WikilinkResolver.resolve(target: target, among: Array(paths))
+        else { return }
+        let url = root.appendingPathComponent(relative)
+        Task { await tabs.open(url) }
     }
 }

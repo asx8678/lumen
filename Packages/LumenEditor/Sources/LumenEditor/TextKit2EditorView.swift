@@ -47,6 +47,16 @@ public struct TextKit2EditorView: NSViewRepresentable {
     /// inactive logical lines and reveals them on the caret/selection's line.
     public var enableLivePreview: Bool
 
+    /// The open note's directory, used to resolve vault-relative inline images
+    /// in Live Preview (`![alt](pic.png)` / `![[pic.png]]`). `nil` for unsaved
+    /// documents — images then fall back to the link-styled placeholder.
+    public var noteBaseURL: URL?
+
+    /// Invoked when the user clicks a rendered wikilink (`[[Note]]`) in Live
+    /// Preview, with the raw target inner text. The host resolves it against
+    /// the vault index and opens the matching note.
+    public var onOpenWikilink: ((String) -> Void)?
+
     /// Creates an editor host bound to the given text.
     /// - Parameters:
     ///   - text: A two-way binding to the document text.
@@ -58,19 +68,24 @@ public struct TextKit2EditorView: NSViewRepresentable {
         highlightTheme: MarkdownHighlightTheme = .default,
         typography: EditorTypography = .default,
         enableLivePreview: Bool = false,
+        noteBaseURL: URL? = nil,
+        onOpenWikilink: ((String) -> Void)? = nil,
         onBlur: (() -> Void)? = nil
     ) {
         self._text = text
         self.highlightTheme = highlightTheme
         self.typography = typography
         self.enableLivePreview = enableLivePreview
+        self.noteBaseURL = noteBaseURL
+        self.onOpenWikilink = onOpenWikilink
         self.onBlur = onBlur
     }
 
     public func makeCoordinator() -> Coordinator {
         Coordinator(
             text: $text, theme: highlightTheme, typography: typography,
-            enableLivePreview: enableLivePreview, onBlur: onBlur)
+            enableLivePreview: enableLivePreview, noteBaseURL: noteBaseURL,
+            onOpenWikilink: onOpenWikilink, onBlur: onBlur)
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -153,6 +168,10 @@ public struct TextKit2EditorView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         // Keep the latest highlight theme so re-styling uses current colors/font.
         context.coordinator.updateTheme(highlightTheme)
+        // Keep the note base URL + wikilink handler current (e.g. after a
+        // save renames an untitled note's directory).
+        context.coordinator.noteBaseURL = noteBaseURL
+        context.coordinator.onOpenWikilink = onOpenWikilink
 
         // Re-apply typography only when it actually changed (an explicit user
         // action), never per keystroke — keeps large-doc typing/scroll cheap.
@@ -185,6 +204,21 @@ public struct TextKit2EditorView: NSViewRepresentable {
 
         /// Whether inline live-preview concealment is active for this editor.
         let enableLivePreview: Bool
+        /// The open note's directory, for resolving vault-relative inline
+        /// images in Live Preview (`nil` for unsaved documents).
+        var noteBaseURL: URL?
+        /// Opens a clicked wikilink target by name (host resolves via the
+        /// vault index). `nil` when no vault context is available.
+        var onOpenWikilink: ((String) -> Void)?
+        /// Decoded image pixels, keyed by resolved URL string. Populated
+        /// lazily as image widgets enter the viewport; a successful load
+        /// re-renders the widget in place.
+        private var imageCache: [String: NSImage] = [:]
+        /// Resolved URLs whose load is in flight (de-dupes concurrent loads).
+        private var imageLoadsInFlight: Set<String> = []
+        /// Resolved URLs whose load failed (so we fall back to the placeholder
+        /// without retrying every recompute).
+        private var imageFailures: Set<String> = []
         /// Owns the conceal/reveal display substitution (content-storage
         /// delegate). Inert while `enableLivePreview` is `false`.
         let livePreviewController = LivePreviewConcealmentController()
@@ -213,12 +247,16 @@ public struct TextKit2EditorView: NSViewRepresentable {
             theme: MarkdownHighlightTheme,
             typography: EditorTypography,
             enableLivePreview: Bool,
+            noteBaseURL: URL?,
+            onOpenWikilink: ((String) -> Void)?,
             onBlur: (() -> Void)?
         ) {
             self.text = text
             self.theme = theme
             self.typography = typography
             self.enableLivePreview = enableLivePreview
+            self.noteBaseURL = noteBaseURL
+            self.onOpenWikilink = onOpenWikilink
             self.onBlur = onBlur
         }
 
@@ -473,10 +511,10 @@ public struct TextKit2EditorView: NSViewRepresentable {
             let baseFont = theme.baseFont
             let linkColor = theme.linkTextColor
             let placeholderColor = theme.linkURLColor
-            Task { @MainActor [weak textView] in
+            Task { @MainActor [weak self, weak textView] in
                 await pending?.value
                 let nodes = await parser.nodes(in: scan)
-                guard let textView,
+                guard let self, let textView,
                     let storage = textView.textContentStorage?.textStorage
                 else { return }
                 let current = storage.string as NSString
@@ -512,7 +550,11 @@ public struct TextKit2EditorView: NSViewRepresentable {
                 let (renderedWidgets, _) = LivePreviewWidgetDecorations.resolve(
                     in: current, selections: selections, widgets: allWidgets)
                 let widgetSubstitutions = renderedWidgets.map { widget in
-                    LivePreviewConcealmentController.WidgetSubstitution(
+                    var pixels: NSImage?
+                    if case .image(let source, _) = widget.kind {
+                        pixels = self.image(for: source, in: textView)
+                    }
+                    return LivePreviewConcealmentController.WidgetSubstitution(
                         range: widget.sourceRange,
                         attributed: LivePreviewWidgetRendering.attributedString(
                             for: widget,
@@ -520,7 +562,8 @@ public struct TextKit2EditorView: NSViewRepresentable {
                             linkColor: linkColor,
                             ruleColor: barColor,
                             placeholderColor: placeholderColor,
-                            width: containerWidth))
+                            width: containerWidth,
+                            image: pixels))
                 }
 
                 // Region model for the chrome layer (bars + code box).
@@ -643,6 +686,65 @@ public struct TextKit2EditorView: NSViewRepresentable {
             recomputeConcealment(in: textView)
         }
 
+        /// Recovers the raw wikilink target from a `lumen-wikilink://…` URL
+        /// (the inverse of `LivePreviewWidgetRendering`'s percent-encoding).
+        private static func wikilinkTarget(from url: URL) -> String? {
+            let prefix = "\(LivePreviewWidgetRendering.wikilinkScheme)://"
+            let raw = url.absoluteString
+            guard raw.hasPrefix(prefix) else { return nil }
+            let encoded = String(raw.dropFirst(prefix.count))
+            let decoded = encoded.removingPercentEncoding ?? encoded
+            return decoded.isEmpty ? nil : decoded
+        }
+
+        // MARK: - Inline image loading (P2.2.1d / lumen-gia)
+
+        /// Returns the decoded pixels for an image `source`, resolved against
+        /// the note's base URL, or `nil` while a load is pending / has failed.
+        ///
+        /// On a cache miss it kicks off a one-shot background load (file read
+        /// or `URLSession`); when that completes it caches the image and nudges
+        /// `recomputeConcealment` so the placeholder is replaced by real pixels.
+        /// In-flight and failed URLs are tracked so we never re-load on every
+        /// recompute (and a broken link stays a graceful placeholder).
+        private func image(for source: String, in textView: NSTextView) -> NSImage? {
+            guard
+                let url = LivePreviewImageResolver.resolvedURL(
+                    source: source, baseURL: noteBaseURL)
+            else { return nil }
+            let key = url.absoluteString
+            if let cached = imageCache[key] { return cached }
+            guard !imageFailures.contains(key), !imageLoadsInFlight.contains(key) else {
+                return nil
+            }
+            imageLoadsInFlight.insert(key)
+            Task { @MainActor [weak self, weak textView] in
+                let loaded = await Self.loadImage(from: url)
+                guard let self else { return }
+                self.imageLoadsInFlight.remove(key)
+                if let loaded {
+                    self.imageCache[key] = loaded
+                } else {
+                    self.imageFailures.insert(key)
+                }
+                if let textView { self.recomputeConcealment(in: textView) }
+            }
+            return nil
+        }
+
+        /// Loads image bytes off the main actor (file read for local URLs,
+        /// `URLSession` for remote) and decodes them to an `NSImage`.
+        private nonisolated static func loadImage(from url: URL) async -> NSImage? {
+            if url.isFileURL {
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return NSImage(data: data)
+            }
+            guard let (data, _) = try? await URLSession.shared.data(from: url) else {
+                return nil
+            }
+            return NSImage(data: data)
+        }
+
         /// Opens a Widget-class link when the user clicks its rendered display
         /// (P2.2.1d). Markdown links open their URL via the workspace; wikilink
         /// widgets carry a `lumen-wikilink:` URL whose note resolution is a
@@ -662,7 +764,12 @@ public struct TextKit2EditorView: NSViewRepresentable {
             }
             guard let url else { return false }
             if url.scheme == LivePreviewWidgetRendering.wikilinkScheme {
-                // Note resolution pending (needs the vault index in the editor).
+                // A wikilink: hand the raw target back to the host, which
+                // resolves it against the vault index and opens the note. No
+                // error sound when there's no handler / no match.
+                if let target = Self.wikilinkTarget(from: url) {
+                    onOpenWikilink?(target)
+                }
                 return true
             }
             return NSWorkspace.shared.open(url)
