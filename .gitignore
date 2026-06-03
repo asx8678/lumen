@@ -6,6 +6,8 @@
 build/
 DerivedData/
 *.xcuserstate
+UserInterfaceState.xcuserstate
+xcschememanagement.plist
 xcuserdata/
 *.xcscmblueprint
 *.xccheckout
@@ -15,6 +17,8 @@ xcuserdata/
 .build/
 .swiftpm/
 Package.resolved
+# Keep the Xcode workspace's resolved versions for reproducible builds
+!Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # Beads / Dolt files (added by bd init)
 .dolt/
