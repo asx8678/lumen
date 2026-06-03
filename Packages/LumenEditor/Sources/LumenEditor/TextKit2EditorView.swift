@@ -68,6 +68,9 @@ public struct TextKit2EditorView: NSViewRepresentable {
         // NSTextLayoutManager / NSTextContentStorage stack with viewport layout.
         let textView = NSTextView(usingTextLayoutManager: true)
         textView.delegate = context.coordinator
+        // Observe character edits to keep the tree-sitter parse tree in sync
+        // (P2.0.1). This runs off the keystroke hot path and does not render.
+        textView.textContentStorage?.textStorage?.delegate = context.coordinator
         // P1.21 UI test hook: lets XCUITest locate the editor text area.
         textView.setAccessibilityIdentifier("editor-textview")
         textView.isEditable = true
@@ -118,6 +121,8 @@ public struct TextKit2EditorView: NSViewRepresentable {
 
         // Highlight the initial viewport.
         context.coordinator.highlightViewport(in: textView)
+        // Seed the parse tree from the initial contents (P2.0.1).
+        context.coordinator.seedParse(with: textView)
         return scrollView
     }
 
@@ -143,7 +148,9 @@ public struct TextKit2EditorView: NSViewRepresentable {
 
     /// Bridges `NSTextView` edits back into the SwiftUI `Binding<String>`.
     @MainActor
-    public final class Coordinator: NSObject, NSTextViewDelegate {
+    public final class Coordinator: NSObject, NSTextViewDelegate,
+        @preconcurrency NSTextStorageDelegate
+    {
         private let text: Binding<String>
         private var theme: MarkdownHighlightTheme
         /// The typography last applied to the text view (P1.13).
@@ -152,6 +159,16 @@ public struct TextKit2EditorView: NSViewRepresentable {
         private let highlighter = MarkdownHighlighter()
         nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
         nonisolated(unsafe) private var frameObserver: NSObjectProtocol?
+
+        // MARK: - Parse backbone (P2.0.1)
+
+        /// Incremental tree-sitter parser kept in sync with the document. It
+        /// runs OFF the keystroke hot path and does NOT (yet) drive rendering —
+        /// it exists so later tasks (highlighting, live preview, folding) can
+        /// query an accurate, incrementally-maintained parse tree.
+        let markdownParser: MarkdownTreeSitterParser? = try? MarkdownTreeSitterParser()
+        /// Serial chain of background parse tasks, preserving edit order.
+        private var parseTask: Task<Void, Never>?
 
         /// True while a user edit is being propagated, so `updateNSView`
         /// does not echo the change back and reset the cursor.
@@ -354,6 +371,40 @@ public struct TextKit2EditorView: NSViewRepresentable {
             // Re-style only the edited paragraph (cheap, bounded).
             highlightActiveParagraph(in: textView)
             isApplyingUserEdit = false
+        }
+
+        // MARK: - NSTextStorageDelegate (parse backbone, P2.0.1)
+
+        /// Captures character edits and schedules an incremental reparse on the
+        /// parser actor, off the keystroke hot path. Attribute-only edits (e.g.
+        /// highlighting) are ignored so they don't trigger spurious reparses.
+        public func textStorage(
+            _ textStorage: NSTextStorage,
+            didProcessEditing editedMask: NSTextStorageEditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int
+        ) {
+            guard editedMask.contains(.editedCharacters), let parser = markdownParser else {
+                return
+            }
+            let edit = MarkdownTextEdit(editedRange: editedRange, changeInLength: delta)
+            let newText = textStorage.string
+            let previous = parseTask
+            parseTask = Task {
+                await previous?.value
+                await parser.applyEdit(edit, newText: newText)
+            }
+        }
+
+        /// Seeds the parse tree from the current contents (programmatic load).
+        func seedParse(with textView: NSTextView) {
+            guard let parser = markdownParser else { return }
+            let text = textView.string
+            let previous = parseTask
+            parseTask = Task {
+                await previous?.value
+                await parser.parse(text)
+            }
         }
 
         /// Editor lost focus — flush any pending autosave (P1.11).
