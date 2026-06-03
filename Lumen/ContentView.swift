@@ -19,6 +19,7 @@ import LumenEditor
 /// - A slim bottom status bar.
 struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var editorText: String = SampleContent.welcomeMarkdown
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +27,8 @@ struct ContentView: View {
                 SidebarPlaceholder()
                     .navigationSplitViewColumnWidth(min: 180, ideal: 240, max: 360)
             } detail: {
-                EditorPlaceholder()
+                TextKit2EditorView(text: $editorText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             Divider()
@@ -50,23 +52,6 @@ private struct SidebarPlaceholder: View {
             Spacer()
         }
         .navigationTitle("Lumen")
-    }
-}
-
-/// Center editor placeholder — will host the TextKit 2 editor.
-private struct EditorPlaceholder: View {
-    var body: some View {
-        VStack {
-            Spacer()
-            Image(systemName: "doc.text")
-                .imageScale(.large)
-                .font(.system(size: 36))
-                .foregroundStyle(.secondary)
-            Text("No document open")
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
