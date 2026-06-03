@@ -41,6 +41,12 @@ public struct TextKit2EditorView: NSViewRepresentable {
     /// Called when the editor loses first-responder focus (write-on-blur, P1.11).
     public var onBlur: (() -> Void)?
 
+    /// Feature flag for the P2.2.1 inline live-preview SPIKE. When `false`
+    /// (the default) the editor behaves exactly as the shipping Phase-1
+    /// highlighter; when `true` it conceals Style-class Markdown markers on
+    /// inactive logical lines and reveals them on the caret/selection's line.
+    public var enableLivePreview: Bool
+
     /// Creates an editor host bound to the given text.
     /// - Parameters:
     ///   - text: A two-way binding to the document text.
@@ -51,16 +57,20 @@ public struct TextKit2EditorView: NSViewRepresentable {
         text: Binding<String>,
         highlightTheme: MarkdownHighlightTheme = .default,
         typography: EditorTypography = .default,
+        enableLivePreview: Bool = false,
         onBlur: (() -> Void)? = nil
     ) {
         self._text = text
         self.highlightTheme = highlightTheme
         self.typography = typography
+        self.enableLivePreview = enableLivePreview
         self.onBlur = onBlur
     }
 
     public func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, theme: highlightTheme, typography: typography, onBlur: onBlur)
+        Coordinator(
+            text: $text, theme: highlightTheme, typography: typography,
+            enableLivePreview: enableLivePreview, onBlur: onBlur)
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -71,6 +81,11 @@ public struct TextKit2EditorView: NSViewRepresentable {
         // Observe character edits to keep the tree-sitter parse tree in sync
         // (P2.0.1). This runs off the keystroke hot path and does not render.
         textView.textContentStorage?.textStorage?.delegate = context.coordinator
+        // P2.2.1 live-preview SPIKE: install the concealment controller as the
+        // content-storage delegate. It is INERT unless the feature flag is on,
+        // so the default editor path is unaffected.
+        context.coordinator.livePreviewController.isEnabled = enableLivePreview
+        textView.textContentStorage?.delegate = context.coordinator.livePreviewController
         // P1.21 UI test hook: lets XCUITest locate the editor text area.
         textView.setAccessibilityIdentifier("editor-textview")
         textView.isEditable = true
@@ -159,6 +174,14 @@ public struct TextKit2EditorView: NSViewRepresentable {
         fileprivate var typography: EditorTypography
         private let onBlur: (() -> Void)?
         private let highlighter = MarkdownTreeSitterHighlighter()
+
+        // MARK: - Live preview (P2.2.1 spike, feature-flagged)
+
+        /// Whether inline live-preview concealment is active for this editor.
+        let enableLivePreview: Bool
+        /// Owns the conceal/reveal display substitution (content-storage
+        /// delegate). Inert while `enableLivePreview` is `false`.
+        let livePreviewController = LivePreviewConcealmentController()
         nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
         nonisolated(unsafe) private var frameObserver: NSObjectProtocol?
 
@@ -180,11 +203,13 @@ public struct TextKit2EditorView: NSViewRepresentable {
             text: Binding<String>,
             theme: MarkdownHighlightTheme,
             typography: EditorTypography,
+            enableLivePreview: Bool,
             onBlur: (() -> Void)?
         ) {
             self.text = text
             self.theme = theme
             self.typography = typography
+            self.enableLivePreview = enableLivePreview
             self.onBlur = onBlur
         }
 
@@ -402,6 +427,61 @@ public struct TextKit2EditorView: NSViewRepresentable {
             // Re-style only the edited paragraph (cheap, bounded).
             highlightActiveParagraph(in: textView)
             isApplyingUserEdit = false
+            // Markers may have appeared/closed on the edited line — refresh the
+            // concealment set for the live-preview spike (no-op when disabled).
+            recomputeConcealment(in: textView)
+        }
+
+        // MARK: - Live-preview concealment (P2.2.1 spike)
+
+        /// Recomputes, for the live-preview feature, which Style-class markers
+        /// in the viewport should be concealed given the current selection,
+        /// then nudges only the affected range to re-query the display string.
+        ///
+        /// Viewport-scoped and inert unless `enableLivePreview` is set. The
+        /// parse + node query run on the parser actor (off the hot path); the
+        /// active-line set is diffed via `LivePreviewConcealmentController` so
+        /// we only invalidate layout when the concealed set actually changes.
+        func recomputeConcealment(in textView: NSTextView) {
+            guard enableLivePreview,
+                let parser = markdownParser,
+                let storage = textView.textContentStorage?.textStorage,
+                let viewport = viewportCharRange(in: textView)
+            else { return }
+            let ns = storage.string as NSString
+            let scan = NSIntersectionRange(
+                viewport, NSRange(location: 0, length: ns.length))
+            guard scan.length > 0 else { return }
+            let selections = textView.selectedRanges.map(\.rangeValue)
+            let controller = livePreviewController
+            let pending = parseTask
+            Task { @MainActor [weak textView] in
+                await pending?.value
+                let nodes = await parser.nodes(in: scan)
+                guard let textView,
+                    let storage = textView.textContentStorage?.textStorage
+                else { return }
+                let current = storage.string as NSString
+                let clamp = NSIntersectionRange(
+                    scan, NSRange(location: 0, length: current.length))
+                guard clamp.length > 0 else { return }
+                let (concealed, _) = LivePreviewDecorations.resolve(
+                    in: current, selections: selections, nodes: nodes)
+                guard controller.update(concealed: concealed) else { return }
+                // Mark the viewport's attributes dirty (NOT characters) so the
+                // content storage re-queries the concealing delegate without
+                // triggering a tree-sitter reparse.
+                storage.beginEditing()
+                storage.edited(.editedAttributes, range: clamp, changeInLength: 0)
+                storage.endEditing()
+            }
+        }
+
+        public func textViewDidChangeSelection(_ notification: Notification) {
+            guard enableLivePreview,
+                let textView = notification.object as? NSTextView
+            else { return }
+            recomputeConcealment(in: textView)
         }
 
         // MARK: - NSTextStorageDelegate (parse backbone, P2.0.1)
