@@ -28,8 +28,8 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var pendingClose: DocumentSession.ID?
 
     var body: some View {
         let theme = themeManager.theme
@@ -50,38 +50,16 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .lumenCloseActiveTab)) { _ in
             if let id = env.tabs.active?.id { requestClose(id) }
         }
-        .confirmationDialog(
-            "Save changes before closing?",
-            isPresented: closeDialogPresented,
-            titleVisibility: .visible
-        ) {
-            Button("Save") {
-                Task {
-                    await env.tabs.saveActive()
-                    if let id = pendingClose { env.tabs.close(id: id) }
-                    pendingClose = nil
-                }
-            }
-            Button("Discard", role: .destructive) {
-                if let id = pendingClose { env.tabs.close(id: id) }
-                pendingClose = nil
-            }
-            Button("Cancel", role: .cancel) { pendingClose = nil }
+        .onChange(of: scenePhase) { _, phase in
+            // Flush pending autosave when the app loses focus / backgrounds.
+            if phase != .active { Task { await env.tabs.flush() } }
         }
     }
 
-    /// Closes a tab, prompting first if it has unsaved changes.
+    /// Closes a tab, flushing/saving any unsaved changes first (autosave means
+    /// no prompt is needed for normal closes — P1.11).
     private func requestClose(_ id: DocumentSession.ID) {
-        let isDirty = env.tabs.tabs.first { $0.id == id }?.isDirty ?? false
-        if isDirty {
-            pendingClose = id
-        } else {
-            env.tabs.close(id: id)
-        }
-    }
-
-    private var closeDialogPresented: Binding<Bool> {
-        Binding(get: { pendingClose != nil }, set: { if !$0 { pendingClose = nil } })
+        Task { await env.tabs.saveAndClose(id: id) }
     }
 }
 
@@ -110,16 +88,22 @@ private struct EditorRegion: View {
     }
 }
 
-/// Binds the editor to a single document session.
+/// Binds the editor to a single document session, scheduling debounced autosave
+/// on edits and flushing on blur (P1.11).
 private struct ActiveEditor: View {
+    @Environment(AppEnvironment.self) private var env
     @Bindable var document: DocumentSession
     let theme: Theme
 
     var body: some View {
         TextKit2EditorView(
             text: $document.text,
-            highlightTheme: MarkdownHighlightTheme(theme: theme)
+            highlightTheme: MarkdownHighlightTheme(theme: theme),
+            onBlur: { Task { await env.tabs.flush() } }
         )
+        .onChange(of: document.text) { _, _ in
+            env.tabs.noteActiveEdited()
+        }
     }
 }
 
@@ -143,7 +127,7 @@ private struct TabStripView: View {
                             tab: tab,
                             isActive: tab.id == env.tabs.activeID,
                             theme: theme,
-                            onSelect: { env.tabs.activeID = tab.id },
+                            onSelect: { env.tabs.activate(tab.id) },
                             onClose: { requestClose(tab.id) }
                         )
                         .glassEffectID(tab.id, in: glassNamespace)

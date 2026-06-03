@@ -35,21 +35,27 @@ public struct TextKit2EditorView: NSViewRepresentable {
     /// Styling configuration for the Markdown highlighter (P1.17 seam).
     public var highlightTheme: MarkdownHighlightTheme
 
+    /// Called when the editor loses first-responder focus (write-on-blur, P1.11).
+    public var onBlur: (() -> Void)?
+
     /// Creates an editor host bound to the given text.
     /// - Parameters:
     ///   - text: A two-way binding to the document text.
     ///   - highlightTheme: Colors/fonts for syntax highlighting. Defaults to
     ///     the ad-hoc theme until design tokens (P1.17) inject one.
+    ///   - onBlur: Invoked when editing ends / focus is lost (autosave flush).
     public init(
         text: Binding<String>,
-        highlightTheme: MarkdownHighlightTheme = .default
+        highlightTheme: MarkdownHighlightTheme = .default,
+        onBlur: (() -> Void)? = nil
     ) {
         self._text = text
         self.highlightTheme = highlightTheme
+        self.onBlur = onBlur
     }
 
     public func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, theme: highlightTheme)
+        Coordinator(text: $text, theme: highlightTheme, onBlur: onBlur)
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -84,8 +90,11 @@ public struct TextKit2EditorView: NSViewRepresentable {
                 height: CGFloat.greatestFiniteMagnitude)
         }
 
-        // Seed initial contents through the TextKit 2 content storage.
+        // Seed initial contents through the TextKit 2 content storage, then
+        // clear undo so the programmatic load is NOT undoable — each document
+        // (tab) starts with a clean per-view undo history (P1.11).
         context.coordinator.setText(text, in: textView)
+        textView.undoManager?.removeAllActions()
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
@@ -120,6 +129,7 @@ public struct TextKit2EditorView: NSViewRepresentable {
     public final class Coordinator: NSObject, NSTextViewDelegate {
         private let text: Binding<String>
         private let theme: MarkdownHighlightTheme
+        private let onBlur: (() -> Void)?
         private let highlighter = MarkdownHighlighter()
         nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
 
@@ -127,9 +137,10 @@ public struct TextKit2EditorView: NSViewRepresentable {
         /// does not echo the change back and reset the cursor.
         fileprivate var isApplyingUserEdit = false
 
-        init(text: Binding<String>, theme: MarkdownHighlightTheme) {
+        init(text: Binding<String>, theme: MarkdownHighlightTheme, onBlur: (() -> Void)?) {
             self.text = text
             self.theme = theme
+            self.onBlur = onBlur
         }
 
         deinit {
@@ -240,6 +251,11 @@ public struct TextKit2EditorView: NSViewRepresentable {
             // Re-style only the edited paragraph (cheap, bounded).
             highlightActiveParagraph(in: textView)
             isApplyingUserEdit = false
+        }
+
+        /// Editor lost focus — flush any pending autosave (P1.11).
+        public func textDidEndEditing(_ notification: Notification) {
+            onBlur?()
         }
     }
 }

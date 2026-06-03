@@ -25,15 +25,48 @@ final class TabManager {
         didSet { persist() }
     }
 
+    /// Switches the active tab, flushing the outgoing document's pending save
+    /// first so edits are never lost when leaving a tab (P1.11).
+    func activate(_ id: DocumentSession.ID) {
+        guard id != activeID else { return }
+        Task {
+            await flush()
+            activeID = id
+        }
+    }
+
     @ObservationIgnored private let files: FileService
     @ObservationIgnored private let vault: VaultManager
     @ObservationIgnored private let store: TabStore
     @ObservationIgnored private let logger = Logger(subsystem: "ai.Lumen", category: "Tabs")
+    @ObservationIgnored private var autosave: AutosaveScheduler!
 
     init(vault: VaultManager, files: FileService, store: TabStore = TabStore()) {
         self.vault = vault
         self.files = files
         self.store = store
+        self.autosave = AutosaveScheduler { [weak self] in
+            await self?.saveActiveIfNeeded()
+        }
+    }
+
+    // MARK: - Autosave (P1.11)
+
+    /// Schedules a debounced autosave; call on each edit to the active document.
+    func noteActiveEdited() {
+        autosave.schedule()
+    }
+
+    /// Flushes any pending autosave immediately (blur / tab-switch / background
+    /// / close). Safe to call when nothing is pending.
+    func flush() async {
+        await autosave.flush()
+    }
+
+    private func saveActiveIfNeeded() async {
+        do { try await active?.autosaveIfNeeded() } catch {
+            logger.error("Autosave failed: \(String(describing: error), privacy: .public)")
+        }
     }
 
     /// The active document, or `nil` when no tabs are open.
@@ -46,6 +79,7 @@ final class TabManager {
 
     /// Opens `url` in a new tab, or focuses the existing tab if already open.
     func open(_ url: URL) async {
+        await flush()  // persist any pending edits before switching focus
         if let existing = tabs.first(where: { $0.url == url }) {
             activeID = existing.id
             return
@@ -62,6 +96,18 @@ final class TabManager {
     }
 
     // MARK: - Close
+
+    /// Flushes any unsaved changes in a tab, then closes it. With autosave on,
+    /// this means normal closes never lose edits and never need a prompt (P1.11).
+    func saveAndClose(id: DocumentSession.ID) async {
+        await flush()
+        if let doc = tabs.first(where: { $0.id == id }), doc.isDirty {
+            do { try await doc.save() } catch {
+                logger.error("Save-on-close failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+        close(id: id)
+    }
 
     /// Closes the tab with `id`, selecting an adjacent tab if it was active.
     func close(id: DocumentSession.ID) {

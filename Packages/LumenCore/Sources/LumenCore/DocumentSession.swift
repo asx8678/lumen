@@ -74,6 +74,16 @@ public final class DocumentSession: Identifiable {
         isDirty = (text != savedText)
     }
 
+    /// Saves only if there are unsaved changes (used by autosave so clean
+    /// documents never write).
+    /// - Returns: `true` if a write happened.
+    @discardableResult
+    public func autosaveIfNeeded() async throws -> Bool {
+        guard url != nil, isDirty else { return false }
+        try await save()
+        return true
+    }
+
     /// Clears the session (no file open).
     public func close() {
         isApplyingLoad = true
