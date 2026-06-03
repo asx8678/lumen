@@ -134,7 +134,7 @@ struct FileTreeView: View {
 
     private func openIfMarkdown(_ url: URL?) {
         guard let url, env.fileTree.selectedItem?.kind == .markdown else { return }
-        Task { try? await env.document.open(url) }
+        Task { await env.tabs.open(url) }
     }
 }
 

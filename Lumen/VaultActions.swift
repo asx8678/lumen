@@ -84,13 +84,19 @@ struct VaultCommands: Commands {
             .disabled(!VaultPresentation.canActOnVault(manager.current))
         }
 
-        // Save the open document (manual ⌘S; autosave is P1.11).
+        // Save the active tab (manual ⌘S; autosave is P1.11).
         CommandGroup(replacing: .saveItem) {
             Button("Save") {
-                Task { try? await env.document.save() }
+                Task { await env.tabs.saveActive() }
             }
             .keyboardShortcut("s", modifiers: [.command])
-            .disabled(env.document.url == nil)
+            .disabled(env.tabs.active?.url == nil)
+
+            Button("Close Tab") {
+                NotificationCenter.default.post(name: .lumenCloseActiveTab, object: nil)
+            }
+            .keyboardShortcut("w", modifiers: [.command])
+            .disabled(env.tabs.active == nil)
         }
 
         CommandGroup(after: .newItem) {
@@ -119,4 +125,10 @@ struct VaultCommands: Commands {
             .disabled(!VaultPresentation.canActOnVault(manager.current))
         }
     }
+}
+
+extension Notification.Name {
+    /// Posted by the ⌘W command so the view layer can run the close-with-dirty
+    /// prompt for the active tab (P1.16).
+    static let lumenCloseActiveTab = Notification.Name("ai.Lumen.closeActiveTab")
 }

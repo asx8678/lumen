@@ -23,52 +23,83 @@ import LumenCore
 import LumenDesignSystem
 import LumenEditor
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var pendingClose: DocumentSession.ID?
 
     var body: some View {
-        @Bindable var document = env.document
         let theme = themeManager.theme
         return NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 380)
         } detail: {
-            EditorRegion(
-                text: $document.text,
-                isEnabled: document.url != nil,
-                theme: theme
-            )
-            .safeAreaInset(edge: .top, spacing: 0) {
-                TabStripView(title: env.document.url?.lastPathComponent ?? env.vault.current?.name)
-            }
+            EditorRegion(active: env.tabs.active, theme: theme)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    TabStripView(requestClose: requestClose)
+                }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             StatusBarView()
         }
         .frame(minWidth: 720, minHeight: 460)
+        .task(id: env.vault.current?.root) { await env.tabs.restore() }
+        .onReceive(NotificationCenter.default.publisher(for: .lumenCloseActiveTab)) { _ in
+            if let id = env.tabs.active?.id { requestClose(id) }
+        }
+        .confirmationDialog(
+            "Save changes before closing?",
+            isPresented: closeDialogPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Save") {
+                Task {
+                    await env.tabs.saveActive()
+                    if let id = pendingClose { env.tabs.close(id: id) }
+                    pendingClose = nil
+                }
+            }
+            Button("Discard", role: .destructive) {
+                if let id = pendingClose { env.tabs.close(id: id) }
+                pendingClose = nil
+            }
+            Button("Cancel", role: .cancel) { pendingClose = nil }
+        }
+    }
+
+    /// Closes a tab, prompting first if it has unsaved changes.
+    private func requestClose(_ id: DocumentSession.ID) {
+        let isDirty = env.tabs.tabs.first { $0.id == id }?.isDirty ?? false
+        if isDirty {
+            pendingClose = id
+        } else {
+            env.tabs.close(id: id)
+        }
+    }
+
+    private var closeDialogPresented: Binding<Bool> {
+        Binding(get: { pendingClose != nil }, set: { if !$0 { pendingClose = nil } })
     }
 }
 
 // MARK: - Center editor region
 
-/// The center region: the working TextKit 2 editor on a token-colored canvas.
-/// Shows an empty-state hint when no document is open.
+/// The center region: the active tab's TextKit 2 editor on a token-colored
+/// canvas. Shows an empty-state hint when no tab is open. Identified by the
+/// active document's id so switching tabs swaps editor state cleanly.
 private struct EditorRegion: View {
-    @Binding var text: String
-    let isEnabled: Bool
+    let active: DocumentSession?
     let theme: Theme
 
     var body: some View {
         ZStack {
             theme.color(.editorBackground)
-            if isEnabled {
-                TextKit2EditorView(
-                    text: $text,
-                    highlightTheme: MarkdownHighlightTheme(theme: theme)
-                )
+            if let active {
+                ActiveEditor(document: active, theme: theme)
+                    .id(active.id)
             } else {
                 Label("Select a note to start editing", systemImage: "doc.text")
                     .font(Typography.font(.body))
@@ -79,62 +110,119 @@ private struct EditorRegion: View {
     }
 }
 
+/// Binds the editor to a single document session.
+private struct ActiveEditor: View {
+    @Bindable var document: DocumentSession
+    let theme: Theme
+
+    var body: some View {
+        TextKit2EditorView(
+            text: $document.text,
+            highlightTheme: MarkdownHighlightTheme(theme: theme)
+        )
+    }
+}
+
 // MARK: - Tab strip (visual scaffold only — functional tabs are P1.16)
 
-/// A non-functional tab strip placed above the editor as a layout scaffold.
-/// Shows a single "current note" pill; real open/close/reorder tabs are P1.16.
+/// The real tab strip (P1.16): one Liquid Glass pill per open tab with a dirty
+/// indicator, click-to-switch, close (×), drag-to-reorder, and a "+" affordance.
 private struct TabStripView: View {
+    @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
-    let title: String?
+    let requestClose: (DocumentSession.ID) -> Void
     @Namespace private var glassNamespace
 
     var body: some View {
         let theme = themeManager.theme
         return GlassEffectContainer {
-            HStack(spacing: Spacing.sm) {
-                CurrentTabPill(label: title ?? "Untitled", theme: theme)
-                    .glassEffectID("current-tab", in: glassNamespace)
-
-                Spacer()
-
-                // Scaffold-only "new tab" affordance (wired up in P1.16).
-                Button {
-                    // No-op: functional tabs are P1.16.
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 22, height: 22)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Spacing.sm) {
+                    ForEach(env.tabs.tabs) { tab in
+                        TabPill(
+                            tab: tab,
+                            isActive: tab.id == env.tabs.activeID,
+                            theme: theme,
+                            onSelect: { env.tabs.activeID = tab.id },
+                            onClose: { requestClose(tab.id) }
+                        )
+                        .glassEffectID(tab.id, in: glassNamespace)
+                        .draggable(TabDragID(id: tab.id)) {
+                            Text(tab.url?.lastPathComponent ?? "Untitled")
+                                .padding(Spacing.xs)
+                        }
+                        .dropDestination(for: TabDragID.self) { items, _ in
+                            guard let dragged = items.first else { return false }
+                            moveTab(dragged.id, before: tab.id)
+                            return true
+                        }
+                    }
                 }
-                .buttonStyle(.glass)
-                .disabled(true)
-                .help("New tab (coming in a later update)")
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
             }
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, Spacing.xs)
         }
-        .frame(height: 34)
+        .frame(height: 36)
         .frame(maxWidth: .infinity)
-        .background(theme.color(.surfaceBackground).opacity(0.001))  // let glass read through
+    }
+
+    private func moveTab(_ dragged: DocumentSession.ID, before target: DocumentSession.ID) {
+        guard dragged != target,
+            let from = env.tabs.tabs.firstIndex(where: { $0.id == dragged }),
+            let to = env.tabs.tabs.firstIndex(where: { $0.id == target })
+        else { return }
+        env.tabs.move(
+            fromOffsets: IndexSet(integer: from),
+            toOffset: to > from ? to + 1 : to)
     }
 }
 
-/// The single placeholder tab pill.
-private struct CurrentTabPill: View {
-    let label: String
+/// A single tab pill.
+private struct TabPill: View {
+    let tab: DocumentSession
+    let isActive: Bool
     let theme: Theme
+    let onSelect: () -> Void
+    let onClose: () -> Void
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 11))
-            Text(label)
+            if tab.isDirty {
+                Circle()
+                    .fill(theme.accentColor)
+                    .frame(width: 6, height: 6)
+            } else {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 11))
+            }
+            Text(tab.url?.lastPathComponent ?? "Untitled")
                 .font(Typography.font(.callout))
                 .lineLimit(1)
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .help("Close tab (⌘W)")
         }
-        .foregroundStyle(theme.color(.textPrimary))
+        .foregroundStyle(isActive ? theme.color(.textPrimary) : theme.color(.textSecondary))
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, Spacing.xs)
         .glassChrome(in: .capsule)
+        .overlay(
+            Capsule().stroke(theme.accentColor.opacity(isActive ? 0.6 : 0), lineWidth: 1)
+        )
+        .contentShape(Capsule())
+        .onTapGesture(perform: onSelect)
+    }
+}
+
+/// Transferable id used for drag-to-reorder.
+private struct TabDragID: Transferable, Codable {
+    let id: UUID
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .data)
     }
 }
 

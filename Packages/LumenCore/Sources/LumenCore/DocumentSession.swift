@@ -19,7 +19,10 @@ import Observation
 /// store keyed by URL) and switch the active one; each tab owns one of these.
 @MainActor
 @Observable
-public final class DocumentSession {
+public final class DocumentSession: Identifiable {
+    /// Stable identity for tab tracking (P1.16).
+    public nonisolated let id = UUID()
+
     /// The URL of the open file, or `nil` when nothing is open.
     public private(set) var url: URL?
 

@@ -29,8 +29,8 @@ public final class AppEnvironment {
     /// Appearance + accent theming engine (P1.17).
     public let theme: ThemeManager
 
-    /// The currently open document (single doc for now; P1.16 extends to tabs).
-    public let document: DocumentSession
+    /// The open editor tabs + active selection (P1.16).
+    let tabs: TabManager
 
     /// Sidebar file-tree state + operations (P1.15). Hosted here so the File
     /// menu and the sidebar share one selection.
@@ -44,7 +44,7 @@ public final class AppEnvironment {
         self.vault = vault
         self.files = files
         self.theme = ThemeManager()
-        self.document = DocumentSession(files: files)
+        self.tabs = TabManager(vault: vault, files: files)
         self.fileTree = FileTreeModel(vault: vault, files: files)
     }
 
@@ -57,7 +57,7 @@ public final class AppEnvironment {
         self.vault = vault
         self.files = files
         self.theme = theme ?? ThemeManager()
-        self.document = DocumentSession(files: files)
+        self.tabs = TabManager(vault: vault, files: files)
         self.fileTree = FileTreeModel(vault: vault, files: files)
     }
 }
