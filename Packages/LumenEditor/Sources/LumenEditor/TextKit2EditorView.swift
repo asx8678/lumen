@@ -119,10 +119,12 @@ public struct TextKit2EditorView: NSViewRepresentable {
         clipView.postsBoundsChangedNotifications = true
         context.coordinator.observeScroll(of: clipView, textView: textView)
 
+        // Seed the parse tree from the initial contents (P2.0.1) BEFORE the
+        // first highlight pass: tree-sitter highlighting (P2.0.2) awaits this
+        // parse task, so the initial viewport styles from a populated tree.
+        context.coordinator.seedParse(with: textView)
         // Highlight the initial viewport.
         context.coordinator.highlightViewport(in: textView)
-        // Seed the parse tree from the initial contents (P2.0.1).
-        context.coordinator.seedParse(with: textView)
         return scrollView
     }
 
@@ -156,7 +158,7 @@ public struct TextKit2EditorView: NSViewRepresentable {
         /// The typography last applied to the text view (P1.13).
         fileprivate var typography: EditorTypography
         private let onBlur: (() -> Void)?
-        private let highlighter = MarkdownHighlighter()
+        private let highlighter = MarkdownTreeSitterHighlighter()
         nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
         nonisolated(unsafe) private var frameObserver: NSObjectProtocol?
 
@@ -320,32 +322,61 @@ public struct TextKit2EditorView: NSViewRepresentable {
             return ns.paragraphRange(for: NSRange(location: location, length: length))
         }
 
-        /// Resets and applies highlighting attributes for `range`.
+        /// Resets and applies tree-sitter-driven highlighting for `range`.
+        ///
+        /// Highlighting is computed from the parser actor's incrementally
+        /// maintained parse tree, so the (potentially non-trivial) parse work
+        /// stays OFF the keystroke hot path. We await any in-flight reparse
+        /// (`parseTask`) so the queried nodes reflect the latest text, then
+        /// query the viewport-scoped node set and overlay attributes back on
+        /// the main actor. Applying attributes is an attribute-only edit, so it
+        /// does not trigger a spurious reparse.
         private func applyHighlight(_ range: NSRange, in textView: NSTextView) {
-            guard let storage = textView.textContentStorage?.textStorage else { return }
+            guard let parser = markdownParser,
+                let storage = textView.textContentStorage?.textStorage
+            else { return }
             let ns = storage.string as NSString
             let scan = NSIntersectionRange(range, NSRange(location: 0, length: ns.length))
             guard scan.length > 0 else { return }
 
-            let spans = highlighter.styledRanges(in: storage.string, range: scan, theme: theme)
-            storage.beginEditing()
-            // Reset to body style first so stale colors clear when markers
-            // change. The paragraph style (line spacing, P1.13) is part of the
-            // baseline; highlighter spans only overlay color + bold/italic font,
-            // so typography and syntax highlighting compose cleanly.
-            storage.setAttributes(
-                [
-                    .foregroundColor: theme.bodyColor,
-                    .font: theme.baseFont,
-                    .paragraphStyle: theme.paragraphStyle,
-                ], range: scan)
-            for span in spans {
-                let clamped = NSIntersectionRange(span.range, scan)
-                if clamped.length > 0 {
-                    storage.addAttributes(span.attributes, range: clamped)
+            let theme = self.theme
+            let highlighter = self.highlighter
+            let pending = parseTask
+            Task { @MainActor [weak textView] in
+                // Wait for the latest scheduled reparse so node ranges are
+                // consistent with the current document text.
+                await pending?.value
+                let nodes = await parser.nodes(in: scan)
+                guard let textView,
+                    let storage = textView.textContentStorage?.textStorage
+                else { return }
+                // Re-clamp against the (possibly changed) current length.
+                let current = NSRange(
+                    location: 0, length: (storage.string as NSString).length)
+                let apply = NSIntersectionRange(scan, current)
+                guard apply.length > 0 else { return }
+
+                let spans = highlighter.styledRanges(for: nodes, theme: theme)
+                storage.beginEditing()
+                // Reset to body style first so stale colors clear when markers
+                // change. The paragraph style (line spacing, P1.13) is part of
+                // the baseline; highlighter spans only overlay color + bold/
+                // italic font, so typography and syntax highlighting compose
+                // cleanly.
+                storage.setAttributes(
+                    [
+                        .foregroundColor: theme.bodyColor,
+                        .font: theme.baseFont,
+                        .paragraphStyle: theme.paragraphStyle,
+                    ], range: apply)
+                for span in spans {
+                    let clamped = NSIntersectionRange(span.range, apply)
+                    if clamped.length > 0 {
+                        storage.addAttributes(span.attributes, range: clamped)
+                    }
                 }
+                storage.endEditing()
             }
-            storage.endEditing()
         }
 
         /// Replaces the text view's contents via the TextKit 2 content storage.
