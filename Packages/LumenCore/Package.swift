@@ -12,6 +12,8 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0"),
         // SQLite index — derived, rebuildable cache (P1.8).
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+        // Full-document Markdown AST (cmark-gfm) for reading view + export (P2.0.3).
+        .package(url: "https://github.com/apple/swift-markdown.git", from: "0.6.0"),
     ],
     targets: [
         .target(
@@ -19,6 +21,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Yams", package: "Yams"),
                 .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "Markdown", package: "swift-markdown"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
