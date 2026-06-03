@@ -11,6 +11,7 @@
 import Foundation
 import LumenCore
 import LumenDesignSystem
+import LumenEditor
 import Observation
 
 /// Holds the app's shared services for dependency injection.
@@ -29,6 +30,9 @@ public final class AppEnvironment {
 
     /// Appearance + accent theming engine (P1.17).
     public let theme: ThemeManager
+
+    /// Adjustable, persisted editor typography (P1.13).
+    public let editorTypography = EditorTypographyStore()
 
     /// The open editor tabs + active selection (P1.16).
     let tabs: TabManager

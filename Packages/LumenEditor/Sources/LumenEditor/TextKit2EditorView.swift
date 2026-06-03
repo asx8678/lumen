@@ -35,6 +35,9 @@ public struct TextKit2EditorView: NSViewRepresentable {
     /// Styling configuration for the Markdown highlighter (P1.17 seam).
     public var highlightTheme: MarkdownHighlightTheme
 
+    /// Adjustable typography: font kind/size, line width, line spacing (P1.13).
+    public var typography: EditorTypography
+
     /// Called when the editor loses first-responder focus (write-on-blur, P1.11).
     public var onBlur: (() -> Void)?
 
@@ -47,15 +50,17 @@ public struct TextKit2EditorView: NSViewRepresentable {
     public init(
         text: Binding<String>,
         highlightTheme: MarkdownHighlightTheme = .default,
+        typography: EditorTypography = .default,
         onBlur: (() -> Void)? = nil
     ) {
         self._text = text
         self.highlightTheme = highlightTheme
+        self.typography = typography
         self.onBlur = onBlur
     }
 
     public func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, theme: highlightTheme, onBlur: onBlur)
+        Coordinator(text: $text, theme: highlightTheme, typography: typography, onBlur: onBlur)
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -72,8 +77,7 @@ public struct TextKit2EditorView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.font = typography.resolvedFont()
 
         // Resize behavior suitable for a vertically-scrolling editor.
         textView.isVerticallyResizable = true
@@ -83,12 +87,14 @@ public struct TextKit2EditorView: NSViewRepresentable {
         textView.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude)
-        if let container = textView.textContainer {
-            container.widthTracksTextView = true
-            container.containerSize = NSSize(
-                width: 0,
-                height: CGFloat.greatestFiniteMagnitude)
-        }
+
+        // Apply the chosen font, line width (container + centering) and line
+        // spacing (typing attributes) before seeding contents.
+        context.coordinator.applyTypography(typography, to: textView)
+
+        // Recenter the readable column when the view is resized.
+        textView.postsFrameChangedNotifications = true
+        context.coordinator.observeFrame(of: textView)
 
         // Seed initial contents through the TextKit 2 content storage, then
         // clear undo so the programmatic load is NOT undoable — each document
@@ -115,6 +121,15 @@ public struct TextKit2EditorView: NSViewRepresentable {
 
     public func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
+        // Keep the latest highlight theme so re-styling uses current colors/font.
+        context.coordinator.updateTheme(highlightTheme)
+
+        // Re-apply typography only when it actually changed (an explicit user
+        // action), never per keystroke — keeps large-doc typing/scroll cheap.
+        if context.coordinator.typography != typography {
+            context.coordinator.applyTypography(typography, to: textView)
+        }
+
         // Only push programmatic changes; skip when the user is the source to
         // avoid clobbering the selection / insertion point mid-edit.
         if !context.coordinator.isApplyingUserEdit, textView.string != text {
@@ -128,24 +143,106 @@ public struct TextKit2EditorView: NSViewRepresentable {
     @MainActor
     public final class Coordinator: NSObject, NSTextViewDelegate {
         private let text: Binding<String>
-        private let theme: MarkdownHighlightTheme
+        private var theme: MarkdownHighlightTheme
+        /// The typography last applied to the text view (P1.13).
+        fileprivate var typography: EditorTypography
         private let onBlur: (() -> Void)?
         private let highlighter = MarkdownHighlighter()
         nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var frameObserver: NSObjectProtocol?
 
         /// True while a user edit is being propagated, so `updateNSView`
         /// does not echo the change back and reset the cursor.
         fileprivate var isApplyingUserEdit = false
 
-        init(text: Binding<String>, theme: MarkdownHighlightTheme, onBlur: (() -> Void)?) {
+        init(
+            text: Binding<String>,
+            theme: MarkdownHighlightTheme,
+            typography: EditorTypography,
+            onBlur: (() -> Void)?
+        ) {
             self.text = text
             self.theme = theme
+            self.typography = typography
             self.onBlur = onBlur
         }
 
         deinit {
             if let scrollObserver {
                 NotificationCenter.default.removeObserver(scrollObserver)
+            }
+            if let frameObserver {
+                NotificationCenter.default.removeObserver(frameObserver)
+            }
+        }
+
+        /// Updates the highlight theme so future re-styling uses current colors
+        /// and base font (kept in sync with the editor's typography).
+        func updateTheme(_ newTheme: MarkdownHighlightTheme) {
+            theme = newTheme
+        }
+
+        // MARK: - Typography (P1.13)
+
+        /// Applies font, readable line width, and line spacing to the text view,
+        /// then re-highlights the viewport so colors/bold/italic recompose.
+        func applyTypography(_ newTypography: EditorTypography, to textView: NSTextView) {
+            typography = newTypography
+            theme.baseFont = newTypography.resolvedFont()
+            theme.paragraphStyle = newTypography.resolvedParagraphStyle()
+
+            textView.font = theme.baseFont
+            textView.typingAttributes = [
+                .font: theme.baseFont,
+                .foregroundColor: theme.bodyColor,
+                .paragraphStyle: theme.paragraphStyle,
+            ]
+
+            // Single full-document baseline pass for font + paragraph style
+            // (cheap: one batched attribute run, only on explicit changes).
+            if let storage = textView.textContentStorage?.textStorage {
+                let full = NSRange(location: 0, length: (storage.string as NSString).length)
+                if full.length > 0 {
+                    storage.beginEditing()
+                    storage.addAttribute(.font, value: theme.baseFont, range: full)
+                    storage.addAttribute(.paragraphStyle, value: theme.paragraphStyle, range: full)
+                    storage.endEditing()
+                }
+            }
+
+            configureLineWidth(newTypography.lineWidth, in: textView)
+            highlightViewport(in: textView)
+        }
+
+        /// Configures the text container width + horizontal centering for the
+        /// readable max line width ("unlimited" tracks the full text view width).
+        func configureLineWidth(_ lineWidth: EditorTypography.LineWidth, in textView: NSTextView) {
+            guard let container = textView.textContainer else { return }
+            let vertical: CGFloat = 12
+            if let maxWidth = lineWidth.points {
+                container.widthTracksTextView = false
+                container.size = NSSize(width: maxWidth, height: CGFloat.greatestFiniteMagnitude)
+                let available = textView.bounds.width
+                let inset = max(12, (available - maxWidth) / 2)
+                textView.textContainerInset = NSSize(width: inset, height: vertical)
+            } else {
+                container.widthTracksTextView = true
+                container.size = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+                textView.textContainerInset = NSSize(width: 12, height: vertical)
+            }
+        }
+
+        /// Observes frame changes to recenter the readable column on resize.
+        func observeFrame(of textView: NSTextView) {
+            frameObserver = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification,
+                object: textView,
+                queue: .main
+            ) { [weak self, weak textView] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let textView else { return }
+                    self.configureLineWidth(self.typography.lineWidth, in: textView)
+                }
             }
         }
 
@@ -213,11 +310,15 @@ public struct TextKit2EditorView: NSViewRepresentable {
 
             let spans = highlighter.styledRanges(in: storage.string, range: scan, theme: theme)
             storage.beginEditing()
-            // Reset to body style first so stale colors clear when markers change.
+            // Reset to body style first so stale colors clear when markers
+            // change. The paragraph style (line spacing, P1.13) is part of the
+            // baseline; highlighter spans only overlay color + bold/italic font,
+            // so typography and syntax highlighting compose cleanly.
             storage.setAttributes(
                 [
                     .foregroundColor: theme.bodyColor,
                     .font: theme.baseFont,
+                    .paragraphStyle: theme.paragraphStyle,
                 ], range: scan)
             for span in spans {
                 let clamped = NSIntersectionRange(span.range, scan)

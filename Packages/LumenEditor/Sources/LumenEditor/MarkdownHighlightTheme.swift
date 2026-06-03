@@ -38,6 +38,10 @@ public struct MarkdownHighlightTheme {
     /// Color for emphasis (bold / italic) runs.
     public var emphasisColor: NSColor
 
+    /// Paragraph style applied as the body baseline (line spacing, P1.13). The
+    /// highlighter includes it in the reset so typography composes with colors.
+    public var paragraphStyle: NSParagraphStyle
+
     public init(
         baseFont: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular),
         bodyColor: NSColor = .labelColor,
@@ -48,9 +52,11 @@ public struct MarkdownHighlightTheme {
         linkURLColor: NSColor = .systemTeal,
         listMarkerColor: NSColor = .systemOrange,
         quoteColor: NSColor = .secondaryLabelColor,
-        emphasisColor: NSColor = .labelColor
+        emphasisColor: NSColor = .labelColor,
+        paragraphStyle: NSParagraphStyle = .default
     ) {
         self.baseFont = baseFont
+        self.paragraphStyle = paragraphStyle
         self.bodyColor = bodyColor
         self.headingColor = headingColor
         self.codeColor = codeColor

@@ -127,9 +127,11 @@ private struct ActiveEditor: View {
     let theme: Theme
 
     var body: some View {
+        let typography = env.editorTypography.typography
         TextKit2EditorView(
             text: $document.text,
-            highlightTheme: MarkdownHighlightTheme(theme: theme),
+            highlightTheme: MarkdownHighlightTheme(theme: theme, typography: typography),
+            typography: typography,
             onBlur: { Task { await env.tabs.flush() } }
         )
         .onChange(of: document.text) { _, _ in

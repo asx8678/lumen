@@ -22,7 +22,8 @@ extension MarkdownHighlightTheme {
     public init(
         palette: Palette,
         baseFont: NSFont = .monospacedSystemFont(
-            ofSize: Typography.monospaceSize, weight: .regular)
+            ofSize: Typography.monospaceSize, weight: .regular),
+        paragraphStyle: NSParagraphStyle = .default
     ) {
         self.init(
             baseFont: baseFont,
@@ -34,12 +35,23 @@ extension MarkdownHighlightTheme {
             linkURLColor: palette.mdLinkURL.nsColor,
             listMarkerColor: palette.mdListMarker.nsColor,
             quoteColor: palette.mdQuote.nsColor,
-            emphasisColor: palette.mdEmphasis.nsColor
+            emphasisColor: palette.mdEmphasis.nsColor,
+            paragraphStyle: paragraphStyle
         )
     }
 
     /// Builds a highlight theme from a design-system ``Theme``.
     public init(theme: Theme) {
         self.init(palette: theme.palette)
+    }
+
+    /// Builds a highlight theme from a ``Theme`` + editor ``EditorTypography``
+    /// (P1.13): the base font + line spacing come from typography so the
+    /// highlighter's font/paragraph baseline matches the editor exactly.
+    public init(theme: Theme, typography: EditorTypography) {
+        self.init(
+            palette: theme.palette,
+            baseFont: typography.resolvedFont(),
+            paragraphStyle: typography.resolvedParagraphStyle())
     }
 }

@@ -39,6 +39,7 @@ struct LumenApp: App {
         .commands {
             VaultCommands(env: env)
             SidebarCommands()  // adds View ▸ Toggle Sidebar (⌃⌘S)
+            EditorCommands(env: env)  // View ▸ Editor typography (P1.13)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
