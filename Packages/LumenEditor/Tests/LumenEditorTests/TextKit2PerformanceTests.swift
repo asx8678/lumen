@@ -96,4 +96,37 @@ final class TextKit2PerformanceTests: XCTestCase {
             textStorage.endEditing()
         }
     }
+
+    /// P1.22: prints explicit load + single-edit (typing-latency proxy) numbers
+    /// for the gate log, on top of the large doc. Single insertions model a
+    /// keystroke; they must stay in the low-ms range (no perceptible latency).
+    func testTypingLatencyNumbersForGate() {
+        let markdown = SyntheticData.markdownDocument(lineCount: largeLineCount)
+        let byteCount = markdown.utf8.count
+
+        let load = Benchmark.measure("editor load \(largeLineCount) lines", iterations: 5) {
+            let textView = makeTextKit2View()
+            textView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+            textView.string = markdown
+        }
+
+        let textView = makeTextKit2View()
+        textView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        textView.string = markdown
+        guard let storage = textView.textContentStorage?.textStorage else {
+            return XCTFail("Missing TextKit 2 content storage")
+        }
+        // Single-character insertions at the head: a keystroke proxy.
+        let keystroke = Benchmark.measure("single keystroke insert", iterations: 200, warmup: 5) {
+            storage.beginEditing()
+            storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "x")
+            storage.endEditing()
+        }
+
+        print("P1.22 editor: doc \(largeLineCount) lines, \(byteCount / 1024) KiB")
+        print("  \(load.summary)")
+        print("  \(keystroke.summary)")
+        // A keystroke must be well under one frame (~16 ms) to feel instant.
+        XCTAssertLessThan(keystroke.mean, 0.016, "keystroke latency exceeded one frame")
+    }
 }

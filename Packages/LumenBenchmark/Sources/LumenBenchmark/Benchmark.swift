@@ -78,6 +78,35 @@ public enum Benchmark {
         )
     }
 
+    /// Async variant of ``measure(_:iterations:warmup:_:)`` for awaiting work
+    /// (e.g. the actor-based indexing pipeline).
+    @discardableResult
+    public static func measureAsync(
+        _ name: String,
+        iterations: Int = 5,
+        warmup: Int = 1,
+        _ body: () async throws -> Void
+    ) async rethrows -> BenchmarkResult {
+        for _ in 0..<Swift.max(0, warmup) {
+            try await body()
+        }
+        let count = Swift.max(1, iterations)
+        var samples: [Double] = []
+        samples.reserveCapacity(count)
+        for _ in 0..<count {
+            let start = DispatchTime.now().uptimeNanoseconds
+            try await body()
+            let end = DispatchTime.now().uptimeNanoseconds
+            samples.append(Double(end - start) / 1_000_000_000)
+        }
+        return BenchmarkResult(
+            name: name,
+            iterations: count,
+            samples: samples,
+            residentBytes: residentMemory()
+        )
+    }
+
     /// Samples the current process's resident memory footprint in bytes.
     /// Returns 0 when unavailable.
     public static func residentMemory() -> UInt64 {

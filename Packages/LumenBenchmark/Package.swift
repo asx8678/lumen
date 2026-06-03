@@ -10,6 +10,12 @@ let package = Package(
         // Command-line runner so CI / Scripts/check.sh can invoke benchmarks.
         .executable(name: "lumen-bench", targets: ["lumen-bench"]),
     ],
+    dependencies: [
+        // The real indexing pipeline (enumerate/parse/hash/upsert) lives in
+        // LumenCore; the large-vault benchmark (P1.22) exercises it directly.
+        // LumenCore does NOT depend on LumenBenchmark, so this is acyclic.
+        .package(path: "../LumenCore")
+    ],
     targets: [
         .target(
             name: "LumenBenchmark",
@@ -19,7 +25,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "lumen-bench",
-            dependencies: ["LumenBenchmark"],
+            dependencies: [
+                "LumenBenchmark",
+                .product(name: "LumenCore", package: "LumenCore"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
