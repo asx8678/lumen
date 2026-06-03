@@ -11,14 +11,13 @@
 //  (toggled by the View ▸ Toggle Sidebar command from P1.2). The tab strip is a
 //  `.safeAreaInset(edge: .top)` on the detail; the status bar is a
 //  `.safeAreaInset(edge: .bottom)` on the whole split view so it spans full
-//  width. Chrome surfaces use real macOS 26 Liquid Glass (`.glassEffect`,
-//  `GlassEffectContainer`, `.buttonStyle(.glass)`); colors/type/spacing come
-//  from the P1.17 design tokens.
-//
-//  Region CONTENTS are deferred: real file tree = P1.15, functional tabs =
-//  P1.16, status-bar metrics = P1.18.
+//  width. Chrome surfaces are flat SOLID token fills (Obsidian-style, de-glassed
+//  in lumen-p2b): tab bar + status bar = `windowBackground`, sidebar =
+//  `sidebarBackground` (translucency defeated), editor = `editorBackground`.
+//  Colors/type/spacing come from the LumenDesignSystem tokens.
 //
 
+import AppKit
 import LumenCore
 import LumenDesignSystem
 import LumenEditor
@@ -221,53 +220,63 @@ private struct ReadingPane: View {
     }
 }
 
-// MARK: - Tab strip (visual scaffold only — functional tabs are P1.16)
+// MARK: - Tab strip (Obsidian-style, de-glassed — P2 lumen-p2b)
 
-/// The real tab strip (P1.16): one Liquid Glass pill per open tab with a dirty
-/// indicator, click-to-switch, close (×), drag-to-reorder, and a "+" affordance.
+/// The tab strip: flat rectangular tabs on a solid `windowBackground` bar. The
+/// active tab uses `editorBackground` with rounded TOP corners so it visually
+/// fuses into the editor below; inactive tabs carry a 1px bottom separator.
+/// A trailing "+" reuses the New Note action; the ViewModePicker stays pinned
+/// to the right.
 private struct TabStripView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
     let requestClose: (DocumentSession.ID) -> Void
-    @Namespace private var glassNamespace
 
     var body: some View {
         let theme = themeManager.theme
-        return GlassEffectContainer {
-            HStack(spacing: Spacing.sm) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Spacing.sm) {
-                        ForEach(env.tabs.tabs) { tab in
-                            TabPill(
-                                tab: tab,
-                                isActive: tab.id == env.tabs.activeID,
-                                theme: theme,
-                                onSelect: { env.tabs.activate(tab.id) },
-                                onClose: { requestClose(tab.id) }
-                            )
-                            .glassEffectID(tab.id, in: glassNamespace)
-                            .draggable(TabDragID(id: tab.id)) {
-                                Text(tab.url?.lastPathComponent ?? "Untitled")
-                                    .padding(Spacing.xs)
-                            }
-                            .dropDestination(for: TabDragID.self) { items, _ in
-                                guard let dragged = items.first else { return false }
-                                moveTab(dragged.id, before: tab.id)
-                                return true
-                            }
+        return HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(env.tabs.tabs) { tab in
+                        TabPill(
+                            tab: tab,
+                            isActive: tab.id == env.tabs.activeID,
+                            theme: theme,
+                            onSelect: { env.tabs.activate(tab.id) },
+                            onClose: { requestClose(tab.id) }
+                        )
+                        .draggable(TabDragID(id: tab.id)) {
+                            Text(tab.url?.lastPathComponent ?? "Untitled")
+                                .padding(Spacing.xs)
+                        }
+                        .dropDestination(for: TabDragID.self) { items, _ in
+                            guard let dragged = items.first else { return false }
+                            moveTab(dragged.id, before: tab.id)
+                            return true
                         }
                     }
-                    .padding(.vertical, Spacing.xs)
-                }
 
-                if env.tabs.active != nil {
-                    ViewModePicker()
+                    NewTabButton(theme: theme) {
+                        Task { await env.fileTree.newNote() }
+                    }
+                    .disabled(env.vault.current == nil)
                 }
             }
-            .padding(.horizontal, Spacing.sm)
+
+            Spacer(minLength: 0)
+
+            if env.tabs.active != nil {
+                ViewModePicker()
+                    .padding(.horizontal, Spacing.sm)
+            }
         }
-        .frame(height: 36)
+        .frame(height: 40)
         .frame(maxWidth: .infinity)
+        .background(theme.color(.windowBackground))
+        .overlay(alignment: .bottom) {
+            // Hairline under the whole bar; the active tab paints over it.
+            theme.color(.separator).frame(height: 1)
+        }
     }
 
     private func moveTab(_ dragged: DocumentSession.ID, before target: DocumentSession.ID) {
@@ -278,6 +287,30 @@ private struct TabStripView: View {
         env.tabs.move(
             fromOffsets: IndexSet(integer: from),
             toOffset: to > from ? to + 1 : to)
+    }
+}
+
+/// The trailing "+" new-tab affordance.
+private struct NewTabButton: View {
+    let theme: Theme
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(theme.color(.textSecondary))
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.small)
+                        .fill(isHovering ? theme.color(.hoverWash) : .clear)
+                )
+                .padding(.horizontal, Spacing.xs)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("New tab")
     }
 }
 
@@ -310,43 +343,78 @@ private struct ViewModePicker: View {
     }
 }
 
-/// A single tab pill.
+/// A single flat tab. Inactive: `windowBackground` + muted text + 1px bottom
+/// separator. Active: `editorBackground` + primary text, top corners rounded
+/// (`Radius.medium`) and NO bottom border so it fuses into the editor. The
+/// leading glyph is a dirty dot, swapped to a close × on hover.
 private struct TabPill: View {
     let tab: DocumentSession
     let isActive: Bool
     let theme: Theme
     let onSelect: () -> Void
     let onClose: () -> Void
+    @State private var isHovering = false
+
+    private var background: Color {
+        theme.color(isActive ? .editorBackground : .windowBackground)
+    }
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
-            if tab.isDirty {
-                Circle()
-                    .fill(theme.accentColor)
-                    .frame(width: 6, height: 6)
-            } else {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 11))
-            }
+            leadingGlyph
+                .frame(width: 14, height: 14)
             Text(tab.url?.lastPathComponent ?? "Untitled")
-                .font(Typography.font(.callout))
+                .font(Typography.font(.body))
                 .lineLimit(1)
+        }
+        .foregroundStyle(isActive ? theme.color(.textPrimary) : theme.color(.textSecondary))
+        .padding(.horizontal, Spacing.md)
+        .frame(maxHeight: .infinity)
+        .frame(minWidth: 96, maxWidth: 200)
+        .background(
+            UnevenRoundedRectangle(
+                topLeadingRadius: Radius.medium,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: Radius.medium
+            )
+            .fill(background)
+        )
+        .overlay(alignment: .bottom) {
+            // Inactive tabs keep the bar's hairline; the active tab covers it.
+            if !isActive {
+                theme.color(.separator).frame(height: 1)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            // 1px divider between adjacent inactive tabs.
+            if !isActive {
+                theme.color(.separator).frame(width: 1)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .onHover { isHovering = $0 }
+    }
+
+    @ViewBuilder
+    private var leadingGlyph: some View {
+        if isHovering {
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(theme.color(.textSecondary))
             }
             .buttonStyle(.plain)
             .help("Close tab (⌘W)")
+        } else if tab.isDirty {
+            Circle()
+                .fill(theme.accentColor)
+                .frame(width: 7, height: 7)
+        } else {
+            Image(systemName: "doc.text")
+                .font(.system(size: 11))
         }
-        .foregroundStyle(isActive ? theme.color(.textPrimary) : theme.color(.textSecondary))
-        .padding(.horizontal, Spacing.sm)
-        .padding(.vertical, Spacing.xs)
-        .glassChrome(in: .capsule)
-        .overlay(
-            Capsule().stroke(theme.accentColor.opacity(isActive ? 0.6 : 0), lineWidth: 1)
-        )
-        .contentShape(Capsule())
-        .onTapGesture(perform: onSelect)
     }
 }
 
@@ -359,62 +427,177 @@ private struct TabDragID: Transferable, Codable {
     }
 }
 
-// MARK: - Sidebar (header + file-tree placeholder — real tree is P1.15)
+// MARK: - Sidebar (Obsidian-style: header action row + tree + vault cluster)
 
-/// Left sidebar: the vault header (P1.4) over a file-tree placeholder.
+/// Left sidebar: a compact header action row over the file tree, with a vault
+/// status cluster pinned to the bottom. The surface is a SOLID
+/// `sidebarBackground` — the NavigationSplitView sidebar is natively
+/// translucent, so we both defeat its NSVisualEffectView material
+/// (`SidebarSolidBackground`) and paint an opaque token fill on top.
 private struct SidebarView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         let theme = themeManager.theme
-        return VStack(alignment: .leading, spacing: Spacing.sm) {
-            VaultHeader(vault: env.vault.current)
-                .padding(.horizontal, Spacing.md)
-                .padding(.top, Spacing.md)
-
-            Divider()
-                .overlay(theme.color(.separator))
-
+        return VStack(alignment: .leading, spacing: 0) {
+            SidebarHeaderRow()
+            Divider().overlay(theme.color(.separator))
             FileTreeView()
-
-            Spacer(minLength: 0)
+            Divider().overlay(theme.color(.separator))
+            VaultStatusCluster(vault: env.vault.current)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // The NavigationSplitView sidebar is already a native translucent
-        // (Liquid Glass) surface; we layer token-colored content on top.
+        .background(SidebarSolidBackground())
+        .background(theme.color(.sidebarBackground))
         .navigationTitle(env.vault.current?.name ?? "Lumen")
     }
 }
 
-/// Compact header describing the open vault (or its absence).
-private struct VaultHeader: View {
+/// Compact header action row: thin muted icon buttons wired to the existing
+/// file-tree actions.
+private struct SidebarHeaderRow: View {
+    @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
+
+    var body: some View {
+        let theme = themeManager.theme
+        @Bindable var tree = env.fileTree
+        let disabled = env.vault.current == nil
+        return HStack(spacing: Spacing.xs) {
+            SidebarIconButton(systemName: "square.and.pencil", help: "New note") {
+                Task { await env.fileTree.newNote() }
+            }
+            SidebarIconButton(systemName: "folder.badge.plus", help: "New folder") {
+                Task { await env.fileTree.newFolder() }
+            }
+            Menu {
+                Picker("Sort", selection: $tree.sortOrder) {
+                    Text("Name").tag(VaultSortOrder.name)
+                    Text("Modified").tag(VaultSortOrder.modifiedDescending)
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .foregroundStyle(theme.color(.textSecondary))
+            .help("Sort")
+
+            Spacer()
+
+            SidebarIconButton(systemName: "chevron.up.chevron.down", help: "Collapse all") {
+                NotificationCenter.default.post(name: .lumenCollapseAllFolders, object: nil)
+            }
+        }
+        .font(.system(size: 13))
+        .disabled(disabled)
+        .padding(.horizontal, Spacing.md)
+        .frame(height: 36)
+    }
+}
+
+/// A thin, muted square icon button with a neutral hover wash.
+private struct SidebarIconButton: View {
+    @Environment(ThemeManager.self) private var themeManager
+    let systemName: String
+    let help: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        let theme = themeManager.theme
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13))
+                .foregroundStyle(theme.color(.textSecondary))
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.small)
+                        .fill(isHovering ? theme.color(.hoverWash) : .clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(help)
+    }
+}
+
+/// Bottom vault status cluster: a "{Vault} ⌄" switcher (left) plus help and
+/// settings icons (right), mirroring Obsidian's bottom-left vault control.
+private struct VaultStatusCluster: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.openSettings) private var openSettings
     let vault: Vault?
 
     var body: some View {
         let theme = themeManager.theme
-        return VStack(alignment: .leading, spacing: Spacing.xxs) {
-            if let vault {
-                Label(vault.name, systemImage: "folder")
-                    .font(Typography.font(.headline))
-                    .foregroundStyle(theme.color(.textPrimary))
-                    .lineLimit(1)
-                Text(vault.root.path)
-                    .font(Typography.font(.caption))
-                    .foregroundStyle(theme.color(.textSecondary))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } else {
-                Label("No vault open", systemImage: "folder.badge.questionmark")
-                    .font(Typography.font(.headline))
-                    .foregroundStyle(theme.color(.textSecondary))
-                Text("File ▸ Open Vault… (⇧⌘O)")
-                    .font(Typography.font(.caption))
-                    .foregroundStyle(theme.color(.textPlaceholder))
+        return HStack(spacing: Spacing.xs) {
+            Menu {
+                Button("Open Vault…") { presentOpenVaultPanel(into: env.vault) }
+                if !env.vault.recents.isEmpty {
+                    Divider()
+                    ForEach(env.vault.recents) { recent in
+                        Button(recent.name) { openRecentVault(recent, into: env.vault) }
+                    }
+                }
+            } label: {
+                HStack(spacing: Spacing.xxs) {
+                    Text(vault?.name ?? "No Vault")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9))
+                }
+                .foregroundStyle(theme.color(.textSecondary))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Switch vault")
+
+            Spacer()
+
+            // Help is a no-op placeholder for now (TODO: wire to docs/help).
+            SidebarIconButton(systemName: "questionmark.circle", help: "Help") {}
+            SidebarIconButton(systemName: "gearshape", help: "Settings") {
+                openSettings()
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .font(.system(size: 12))
+        .padding(.horizontal, Spacing.md)
+        .frame(height: 32)
+    }
+}
+
+/// Defeats the NavigationSplitView sidebar's native translucency by walking up
+/// to the enclosing `NSVisualEffectView` and forcing an opaque, non-vibrant
+/// state. An opaque token fill is layered on top in `SidebarView`, but this
+/// stops the system material from bleeding through at the edges.
+private struct SidebarSolidBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { SolidifierView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class SolidifierView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            solidifyEnclosingVisualEffect()
+        }
+
+        private func solidifyEnclosingVisualEffect() {
+            var view: NSView? = superview
+            while let current = view {
+                if let effect = current as? NSVisualEffectView {
+                    effect.state = .inactive
+                    effect.material = .windowBackground
+                    effect.isEmphasized = false
+                }
+                view = current.superview
+            }
+        }
     }
 }
 
@@ -435,24 +618,28 @@ private struct StatusBarView: View {
         return HStack(spacing: Spacing.sm) {
             if active != nil {
                 SaveStateLabel(isDirty: active?.isDirty ?? false, theme: theme)
-                Text("·").foregroundStyle(theme.color(.textPlaceholder))
-                Text(countLabel)
-                    .font(Typography.font(.caption))
-                    .foregroundStyle(theme.color(.textSecondary))
             } else {
                 Text("No note")
-                    .font(Typography.font(.caption))
+                    .font(Typography.font(.callout))
                     .foregroundStyle(theme.color(.textPlaceholder))
             }
 
+            IndexingIndicator(status: env.indexingStatus, theme: theme)
+
             Spacer()
 
-            IndexingIndicator(status: env.indexingStatus, theme: theme)
+            // Obsidian right-aligns word/char metrics in the status bar.
+            if active != nil {
+                Text(countLabel)
+                    .font(Typography.font(.callout))
+                    .foregroundStyle(theme.color(.textSecondary))
+            }
         }
         .padding(.horizontal, Spacing.md)
-        .frame(height: 26)
+        .frame(height: 24)
         .frame(maxWidth: .infinity)
-        .glassChrome(in: .rect)
+        .background(theme.color(.windowBackground))
+        .overlay(alignment: .top) { theme.color(.separator).frame(height: 1) }
         .task(id: active?.id) { recompute(active?.text ?? "") }
         .onChange(of: active?.text ?? "") { _, newText in
             scheduleRecompute(newText)
@@ -490,7 +677,7 @@ private struct SaveStateLabel: View {
                 .fill(isDirty ? theme.accentColor : theme.color(.textPlaceholder))
                 .frame(width: 6, height: 6)
             Text(state.label)
-                .font(Typography.font(.caption))
+                .font(Typography.font(.callout))
                 .foregroundStyle(theme.color(.textSecondary))
         }
     }
@@ -507,7 +694,7 @@ private struct IndexingIndicator: View {
                 ProgressView()
                     .controlSize(.mini)
                 Text("Indexing \(status.processed)/\(status.total)")
-                    .font(Typography.font(.caption))
+                    .font(Typography.font(.callout))
                     .foregroundStyle(theme.color(.textPlaceholder))
             }
             .transition(.opacity)

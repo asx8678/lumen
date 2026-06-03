@@ -131,4 +131,8 @@ extension Notification.Name {
     /// Posted by the ⌘W command so the view layer can run the close-with-dirty
     /// prompt for the active tab (P1.16).
     static let lumenCloseActiveTab = Notification.Name("ai.Lumen.closeActiveTab")
+
+    /// Posted by the sidebar "Collapse all" action so the file tree collapses
+    /// every expanded folder (lumen-p2b).
+    static let lumenCollapseAllFolders = Notification.Name("ai.Lumen.collapseAllFolders")
 }
