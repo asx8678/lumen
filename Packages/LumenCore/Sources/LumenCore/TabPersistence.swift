@@ -16,10 +16,33 @@ public struct TabsSnapshot: Codable, Equatable, Sendable {
     public var relativePaths: [String]
     /// The active tab's index into `relativePaths`.
     public var activeIndex: Int
+    /// Per-tab presentation modes (P2.1.1), parallel to `relativePaths`. May be
+    /// shorter (or empty) than `relativePaths` — missing entries default to
+    /// `.edit`, so legacy snapshots decode cleanly.
+    public var viewModes: [EditorViewMode]
 
-    public init(relativePaths: [String], activeIndex: Int) {
+    public init(
+        relativePaths: [String],
+        activeIndex: Int,
+        viewModes: [EditorViewMode] = []
+    ) {
         self.relativePaths = relativePaths
         self.activeIndex = activeIndex
+        self.viewModes = viewModes
+    }
+
+    /// Decodes, defaulting `viewModes` to empty for legacy snapshots.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.relativePaths = try c.decode([String].self, forKey: .relativePaths)
+        self.activeIndex = try c.decode(Int.self, forKey: .activeIndex)
+        self.viewModes =
+            try c.decodeIfPresent([EditorViewMode].self, forKey: .viewModes) ?? []
+    }
+
+    /// The persisted mode for `index`, defaulting to `.edit`.
+    public func viewMode(at index: Int) -> EditorViewMode {
+        viewModes.indices.contains(index) ? viewModes[index] : .edit
     }
 
     /// An empty snapshot (no open tabs).
@@ -61,22 +84,25 @@ public struct TabStore {
     ///   - snapshot: The persisted snapshot.
     ///   - vaultRoot: The vault root the relative paths are based on.
     ///   - exists: Predicate testing whether a URL still exists (injectable).
-    /// - Returns: Surviving URLs in order, and the active index (or `nil`).
+    /// - Returns: Surviving URLs in order, their per-tab modes (parallel to
+    ///   `urls`), and the active index (or `nil`).
     public static func resolve(
         _ snapshot: TabsSnapshot,
         vaultRoot: URL,
         exists: (URL) -> Bool
-    ) -> (urls: [URL], activeIndex: Int?) {
+    ) -> (urls: [URL], modes: [EditorViewMode], activeIndex: Int?) {
         var urls: [URL] = []
+        var modes: [EditorViewMode] = []
         var newActive: Int?
         for (offset, path) in snapshot.relativePaths.enumerated() {
             let url = TabSupport.resolve(relativePath: path, root: vaultRoot)
             guard exists(url) else { continue }
             if offset <= snapshot.activeIndex { newActive = urls.count }
             urls.append(url)
+            modes.append(snapshot.viewMode(at: offset))
         }
-        guard !urls.isEmpty else { return ([], nil) }
+        guard !urls.isEmpty else { return ([], [], nil) }
         let clamped = min(max(newActive ?? 0, 0), urls.count - 1)
-        return (urls, clamped)
+        return (urls, modes, clamped)
     }
 }

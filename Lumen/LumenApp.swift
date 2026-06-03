@@ -39,6 +39,7 @@ struct LumenApp: App {
         .commands {
             VaultCommands(env: env)
             SidebarCommands()  // adds View ▸ Toggle Sidebar (⌃⌘S)
+            ReadingCommands(env: env)  // View ▸ Toggle Reading View (⌘E, P2.1.1)
             EditorCommands(env: env)  // View ▸ Editor typography (P1.13)
         }
         .onChange(of: scenePhase) { _, phase in

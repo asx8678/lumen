@@ -173,15 +173,48 @@ private struct ActiveEditor: View {
 
     var body: some View {
         let typography = env.editorTypography.typography
-        TextKit2EditorView(
-            text: $document.text,
-            highlightTheme: MarkdownHighlightTheme(theme: theme, typography: typography),
-            typography: typography,
-            onBlur: { Task { await env.tabs.flush() } }
-        )
-        .onChange(of: document.text) { _, _ in
-            env.tabs.noteActiveEdited()
+        switch document.viewMode {
+        case .edit:
+            TextKit2EditorView(
+                text: $document.text,
+                highlightTheme: MarkdownHighlightTheme(theme: theme, typography: typography),
+                typography: typography,
+                onBlur: { Task { await env.tabs.flush() } }
+            )
+            .onChange(of: document.text) { _, _ in
+                env.tabs.noteActiveEdited()
+            }
+        case .reading:
+            ReadingPane(document: document, theme: theme, typography: typography)
         }
+    }
+}
+
+/// The reading-mode pane: parses the active document's Markdown into a block
+/// tree (off the typing hot path, recomputed when the text changes) and renders
+/// it read-only via `MarkdownReadingView`.
+private struct ReadingPane: View {
+    let document: DocumentSession
+    let theme: Theme
+    let typography: EditorTypography
+    @State private var blocks: [MarkdownBlock] = []
+    @State private var parseTask: Task<Void, Never>?
+
+    var body: some View {
+        MarkdownReadingView(
+            blocks: blocks,
+            theme: theme,
+            baseFontSize: typography.fontSize,
+            maxContentWidth: typography.lineWidth.points,
+            baseURL: document.url?.deletingLastPathComponent()
+        )
+        .task(id: document.text) { reparse(document.text) }
+    }
+
+    /// Debounces parsing so a note that's edited then read doesn't reparse on
+    /// every keystroke; the reading view itself is read-only.
+    private func reparse(_ text: String) {
+        blocks = MarkdownDocumentParser.parseBlocks(text)
     }
 }
 
@@ -198,31 +231,37 @@ private struct TabStripView: View {
     var body: some View {
         let theme = themeManager.theme
         return GlassEffectContainer {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Spacing.sm) {
-                    ForEach(env.tabs.tabs) { tab in
-                        TabPill(
-                            tab: tab,
-                            isActive: tab.id == env.tabs.activeID,
-                            theme: theme,
-                            onSelect: { env.tabs.activate(tab.id) },
-                            onClose: { requestClose(tab.id) }
-                        )
-                        .glassEffectID(tab.id, in: glassNamespace)
-                        .draggable(TabDragID(id: tab.id)) {
-                            Text(tab.url?.lastPathComponent ?? "Untitled")
-                                .padding(Spacing.xs)
-                        }
-                        .dropDestination(for: TabDragID.self) { items, _ in
-                            guard let dragged = items.first else { return false }
-                            moveTab(dragged.id, before: tab.id)
-                            return true
+            HStack(spacing: Spacing.sm) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.sm) {
+                        ForEach(env.tabs.tabs) { tab in
+                            TabPill(
+                                tab: tab,
+                                isActive: tab.id == env.tabs.activeID,
+                                theme: theme,
+                                onSelect: { env.tabs.activate(tab.id) },
+                                onClose: { requestClose(tab.id) }
+                            )
+                            .glassEffectID(tab.id, in: glassNamespace)
+                            .draggable(TabDragID(id: tab.id)) {
+                                Text(tab.url?.lastPathComponent ?? "Untitled")
+                                    .padding(Spacing.xs)
+                            }
+                            .dropDestination(for: TabDragID.self) { items, _ in
+                                guard let dragged = items.first else { return false }
+                                moveTab(dragged.id, before: tab.id)
+                                return true
+                            }
                         }
                     }
+                    .padding(.vertical, Spacing.xs)
                 }
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
+
+                if env.tabs.active != nil {
+                    ViewModePicker()
+                }
             }
+            .padding(.horizontal, Spacing.sm)
         }
         .frame(height: 36)
         .frame(maxWidth: .infinity)
@@ -236,6 +275,33 @@ private struct TabStripView: View {
         env.tabs.move(
             fromOffsets: IndexSet(integer: from),
             toOffset: to > from ? to + 1 : to)
+    }
+}
+
+/// A compact segmented control mirroring the ⌘E toggle: switches the active
+/// tab between edit and reading mode (P2.1.1).
+private struct ViewModePicker: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        Picker("View Mode", selection: modeBinding) {
+            Image(systemName: "pencil").tag(EditorViewMode.edit)
+                .help("Edit")
+            Image(systemName: "book").tag(EditorViewMode.reading)
+                .help("Reading view (⌘E)")
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private var modeBinding: Binding<EditorViewMode> {
+        Binding(
+            get: { env.tabs.active?.viewMode ?? .edit },
+            set: { newValue in
+                guard let active = env.tabs.active, active.viewMode != newValue else { return }
+                env.tabs.toggleActiveViewMode()
+            })
     }
 }
 

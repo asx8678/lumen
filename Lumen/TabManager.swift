@@ -145,6 +145,14 @@ final class TabManager {
 
     // MARK: - Save
 
+    /// Toggles the active tab's presentation mode (edit ⇄ reading) and persists
+    /// it (P2.1.1). No-op when no tab is open.
+    func toggleActiveViewMode() {
+        guard let active else { return }
+        active.toggleViewMode()
+        persist()
+    }
+
     /// Saves the active tab.
     func saveActive() async {
         do { try await active?.save() } catch {
@@ -157,13 +165,20 @@ final class TabManager {
     /// Persists the open tabs (relative paths + active index) for the vault.
     func persist() {
         guard let root = vault.current?.root else { return }
-        let urls = tabs.compactMap(\.url)
-        let relativePaths = urls.compactMap { TabSupport.relativePath(of: $0, root: root) }
+        // Persist only file-backed tabs, keeping each tab's mode aligned.
+        let backed = tabs.filter { $0.url != nil }
+        let relativePaths = backed.compactMap { tab in
+            tab.url.flatMap { TabSupport.relativePath(of: $0, root: root) }
+        }
+        let viewModes = backed.map(\.viewMode)
         let activeIndex =
             active?.url
-            .flatMap { url in urls.firstIndex(of: url) } ?? 0
+            .flatMap { url in backed.firstIndex(where: { $0.url == url }) } ?? 0
         store.save(
-            TabsSnapshot(relativePaths: relativePaths, activeIndex: activeIndex),
+            TabsSnapshot(
+                relativePaths: relativePaths,
+                activeIndex: activeIndex,
+                viewModes: viewModes),
             vaultRoot: root)
     }
 
@@ -177,10 +192,13 @@ final class TabManager {
         let resolved = TabStore.resolve(snapshot, vaultRoot: root) {
             FileManager.default.fileExists(atPath: $0.path)
         }
-        for url in resolved.urls {
+        for (offset, url) in resolved.urls.enumerated() {
             let session = DocumentSession(files: files)
             do {
                 try await session.open(url)
+                if resolved.modes.indices.contains(offset) {
+                    session.viewMode = resolved.modes[offset]
+                }
                 tabs.append(session)
             } catch {
                 logger.error("Restore open failed: \(String(describing: error), privacy: .public)")

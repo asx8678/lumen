@@ -41,6 +41,15 @@ public final class DocumentSession: Identifiable {
     /// The UI surfaces a warning; full conflict resolution is Phase 3.
     public internal(set) var hasExternalConflict: Bool = false
 
+    /// This tab's presentation mode (P2.1.1): editable source or reading view.
+    /// Per-tab and persisted with the tab set; defaults to `.edit`.
+    public var viewMode: EditorViewMode = .edit
+
+    /// Flips the tab between edit and reading mode (the ⌘E toggle).
+    public func toggleViewMode() {
+        viewMode = viewMode.toggled
+    }
+
     /// The last-known on-disk contents (the baseline for dirtiness).
     @ObservationIgnored private var savedText: String
     /// Guards `text.didSet` while we apply a load programmatically.

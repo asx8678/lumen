@@ -10,6 +10,8 @@ let package = Package(
     dependencies: [
         // Design tokens / theming engine (highlighter colors come from tokens).
         .package(path: "../LumenDesignSystem"),
+        // Renderable Markdown model (MarkdownBlock/Inline) for the reading view.
+        .package(path: "../LumenCore"),
         // Shared synthetic-data generators / benchmark helpers (test-only use).
         .package(path: "../LumenBenchmark"),
         // tree-sitter Swift binding — incremental parse trees (P2.0.1).
@@ -28,6 +30,7 @@ let package = Package(
             name: "LumenEditor",
             dependencies: [
                 .product(name: "LumenDesignSystem", package: "LumenDesignSystem"),
+                .product(name: "LumenCore", package: "LumenCore"),
                 .product(name: "SwiftTreeSitter", package: "swift-tree-sitter"),
                 .product(name: "TreeSitterMarkdown", package: "tree-sitter-markdown"),
             ],
