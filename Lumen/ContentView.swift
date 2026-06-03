@@ -103,6 +103,7 @@ struct ContentView: View {
 /// canvas. Shows an empty-state hint when no tab is open. Identified by the
 /// active document's id so switching tabs swaps editor state cleanly.
 private struct EditorRegion: View {
+    @Environment(AppEnvironment.self) private var env
     let active: DocumentSession?
     let theme: Theme
 
@@ -112,13 +113,54 @@ private struct EditorRegion: View {
             if let active {
                 ActiveEditor(document: active, theme: theme)
                     .id(active.id)
+            } else if env.vault.current == nil {
+                NoVaultView()
             } else {
-                Label("Select a note to start editing", systemImage: "doc.text")
-                    .font(Typography.font(.body))
-                    .foregroundStyle(theme.color(.textPlaceholder))
+                NoNoteSelectedView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// First-run / no-vault empty state: a prominent, actionable call to action that
+/// reuses the same Open Vault… panel as File ▸ Open Vault… (⇧⌘O).
+private struct NoVaultView: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("No Vault Open", systemImage: "folder.badge.plus")
+        } description: {
+            Text(
+                "Open a folder to use as your Lumen vault. Your notes stay as plain "
+                    + "Markdown files on disk.")
+        } actions: {
+            Button("Open Vault…") {
+                presentOpenVaultPanel(into: env.vault)
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+        }
+    }
+}
+
+/// Vault-open-but-no-note empty state: a matching styled prompt that reuses the
+/// existing new-note action (also bound to File ▸ New Note / ⌘N).
+private struct NoNoteSelectedView: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("No Note Selected", systemImage: "doc.text")
+        } description: {
+            Text("Select a note from the sidebar, or create a new one to start writing.")
+        } actions: {
+            Button("New Note") {
+                Task { await env.fileTree.newNote() }
+            }
+            .buttonStyle(.borderedProminent)
+        }
     }
 }
 
