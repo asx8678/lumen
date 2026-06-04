@@ -32,17 +32,26 @@ struct ContentView: View {
 
     var body: some View {
         let theme = themeManager.theme
-        return NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 380)
-        } detail: {
-            EditorRegion(active: env.tabs.active, theme: theme)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    TabStripView(requestClose: requestClose)
-                }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            StatusBarView()
+        // Obsidian-style left ribbon: a fixed 44px column to the LEFT of the
+        // NavigationSplitView sidebar. NavigationSplitView has no leading 3rd
+        // column, so we wrap the whole shell in an HStack (lumen-df8).
+        return HStack(spacing: 0) {
+            RibbonView(
+                sidebarVisible: columnVisibility != .detailOnly,
+                toggleSidebar: toggleSidebar
+            )
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                SidebarView()
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 380)
+            } detail: {
+                EditorRegion(active: env.tabs.active, theme: theme)
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        TabStripView(requestClose: requestClose)
+                    }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                StatusBarView()
+            }
         }
         .frame(minWidth: 720, minHeight: 460)
         .task(id: env.vault.current?.root) {
@@ -93,6 +102,12 @@ struct ContentView: View {
     /// no prompt is needed for normal closes — P1.11).
     private func requestClose(_ id: DocumentSession.ID) {
         Task { await env.tabs.saveAndClose(id: id) }
+    }
+
+    /// Toggles the left sidebar, mirroring the View ▸ Toggle Sidebar command.
+    /// Driven by the ribbon's Files item.
+    private func toggleSidebar() {
+        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
     }
 }
 
@@ -530,12 +545,13 @@ private struct SidebarIconButton: View {
     }
 }
 
-/// Bottom vault status cluster: a "{Vault} ⌄" switcher (left) plus help and
-/// settings icons (right), mirroring Obsidian's bottom-left vault control.
+/// Bottom vault status cluster: just the "{Vault} ⌄" switcher, matching
+/// Obsidian's bottom-left vault control. Help + settings now live in the left
+/// ribbon's bottom group (deduped in lumen-df8), so they're intentionally gone
+/// from here.
 private struct VaultStatusCluster: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ThemeManager.self) private var themeManager
-    @Environment(\.openSettings) private var openSettings
     let vault: Vault?
 
     var body: some View {
@@ -566,12 +582,6 @@ private struct VaultStatusCluster: View {
             .help("Switch vault")
 
             Spacer()
-
-            // Help is a no-op placeholder for now (TODO: wire to docs/help).
-            SidebarIconButton(systemName: "questionmark.circle", help: "Help") {}
-            SidebarIconButton(systemName: "gearshape", help: "Settings") {
-                openSettings()
-            }
         }
         .font(.system(size: 12))
         .padding(.horizontal, Spacing.md)
